@@ -1,5 +1,7 @@
 # Flickr Uploader
 
+**English** · [Deutsch](README.de.md)
+
 A Windows desktop app that uploads chosen local folders to Flickr as albums,
 without duplicate photos or duplicate albums, and downloads your albums back
 to your PC.
