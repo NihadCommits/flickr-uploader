@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <!-- Nothing may come from the internet: only this folder, plus inline SVG data. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; script-src 'self'">
+  <title>Flickr Uploader</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="appbar">
+    <div class="brand">
+      <span class="brand-mark" id="brand-mark" aria-hidden="true"></span>
+      <span>Flickr Uploader</span>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Bereiche">
+      <button role="tab" aria-selected="true" aria-controls="tab-upload">Hochladen</button>
+      <button role="tab" aria-selected="false" aria-controls="tab-albums">Alben</button>
+      <button role="tab" aria-selected="false" aria-controls="tab-download">Herunterladen</button>
+      <button role="tab" aria-selected="false" aria-controls="tab-settings">Einstellungen</button>
+    </nav>
+    <div class="appbar-status">
+      <span class="chip" id="sync-chip" hidden></span>
+      <button class="chip chip-button" id="login-chip" type="button">…</button>
+    </div>
+  </header>
+
+  <main>
+    <section role="tabpanel" id="tab-upload">
+      <div class="steps" id="steps"></div>
+      <div class="card upload-card" id="upload-card" hidden></div>
+      <div class="toolbar">
+        <select id="root-select" aria-label="Ausgangsordner"></select>
+        <button class="btn" id="rescan">Neu scannen</button>
+        <span class="spacer"></span>
+        <button class="btn" id="add-root">Ordner öffnen …</button>
+      </div>
+      <div class="workspace">
+        <div class="card tree-card">
+          <div class="card-head">Ordner <span class="muted small" id="tree-hint"></span></div>
+          <div class="tree-scroll" id="tree"></div>
+        </div>
+        <aside class="card details-card">
+          <div class="details-scroll" id="details"></div>
+        </aside>
+      </div>
+    </section>
+
+    <section role="tabpanel" id="tab-albums" hidden>
+      <div id="albums-view"></div>
+    </section>
+
+    <section role="tabpanel" id="tab-download" hidden>
+      <div class="card upload-card" id="download-card"></div>
+      <div id="download-albums"></div>
+    </section>
+
+    <section role="tabpanel" id="tab-settings" hidden>
+      <div id="settings-view"></div>
+    </section>
+  </main>
+
+  <footer class="footbar" id="footbar"></footer>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <div class="modal" id="dialog" hidden>
+    <div class="dialog" role="alertdialog" aria-labelledby="dialog-title" aria-describedby="dialog-text">
+      <h3 id="dialog-title">Hinweis</h3>
+      <p id="dialog-text"></p>
+      <div class="actions">
+        <button class="btn" id="dialog-cancel" hidden>Abbrechen</button>
+        <button class="btn btn-primary" id="dialog-ok">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# Runtime dependencies, pinned for reproducible installs.
+flickrapi==2.4.0
+# Used directly by flickr_client.py (also pulled in by flickrapi): HTTP errors,
+# and the streamed multipart upload that sends the file's extension along.
+requests==2.34.2
+requests-toolbelt==1.0.0
+keyring==25.7.0
+# Reads capture date and pixel size (EXIF) for the pre-check; only the file
+# header is read, never the image data.
+pillow==12.3.0
+xxhash==4.0.1
+# GUI: native window rendering the HTML frontend (Edge WebView2 on Windows).
+pywebview==6.2.1

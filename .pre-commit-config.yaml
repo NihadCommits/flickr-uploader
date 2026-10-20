@@ -1,0 +1,59 @@
+# Git hooks that run on every commit. Install once per clone:
+#   .venv\Scripts\python.exe -m pre_commit install
+# Never bypass them with --no-verify.
+
+repos:
+  # Secret scanning of the staged changes (rules extended in .gitleaks.toml).
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
+  # All started through the environment's (signed) python.exe: Windows Smart
+  # App Control blocks pip-generated .exe launchers without reputation, and
+  # which ones it blocks can change. The hooks themselves run unchanged.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key
+        entry: python -m pre_commit_hooks.detect_private_key
+      - id: check-added-large-files
+        entry: python -m pre_commit_hooks.check_added_large_files
+        args: ["--maxkb=500"]
+      - id: check-case-conflict
+        entry: python -m pre_commit_hooks.check_case_conflict
+      - id: check-merge-conflict
+        entry: python -m pre_commit_hooks.check_merge_conflict
+      - id: check-toml
+        entry: python -m pre_commit_hooks.check_toml
+      - id: check-yaml
+        entry: python -m pre_commit_hooks.check_yaml
+      # The two fixers leave vendored files as they came (byte-identical).
+      - id: end-of-file-fixer
+        entry: python -m pre_commit_hooks.end_of_file_fixer
+        exclude: ^src/flickr_uploader/gui/web/vendor/
+      - id: trailing-whitespace
+        entry: python -m pre_commit_hooks.trailing_whitespace_fixer
+        args: ["--markdown-linebreak-ext=md"]
+        exclude: ^src/flickr_uploader/gui/web/vendor/
+
+  # Keep in sync with the ruff version in requirements-dev.txt.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.9
+    hooks:
+      - id: ruff-check
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: forbid-secret-files
+        name: forbid credential, token and database files
+        language: fail
+        entry: "Credential, token and database files must never be committed"
+        files: '(?i)(^|/)(\.env(\..+)?|credentials[^/]*\.json|[^/]+\.(db|db-wal|db-shm|db-journal|sqlite|sqlite3|token|pem|key|p12|pfx))$'
+      - id: forbid-media-files
+        name: forbid photos, videos and RAW files (personal data)
+        language: fail
+        entry: "Real photos/videos must not be committed; generate test images in code"
+        # Must cover every type in config.py (checked by tests/test_config.py).
+        files: '(?i)\.(jpe?g|heic|heif|tiff?|3fr|ari|arw|braw|cr2|cr3|crw|dcr|dng|erf|fff|gpr|iiq|kdc|mef|mos|mrw|nef|nrw|orf|ori|pef|r3d|raf|raw|rw2|rwl|sr2|srf|srw|x3f|3gp|avi|m2ts|m4v|mkv|mov|mp4|mpe?g|mts|ogg|ogv|wmv)$'

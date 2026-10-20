@@ -1,0 +1,6 @@
+# Development tools on top of the runtime dependencies.
+-r requirements.txt
+pre-commit==4.6.2
+pytest==9.1.1
+# Keep in sync with the ruff-pre-commit rev in .pre-commit-config.yaml.
+ruff==0.16.9

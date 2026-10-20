@@ -1,0 +1,105 @@
+# Credentials - never commit these.
+# Second line of defense only: the app keeps secrets in the Windows
+# Credential Manager, and the pre-commit hooks block these files too.
+credentials*.json
+.env
+.env.*
+*.token
+token_cache/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local state / database (the app stores its DB outside the repo anyway)
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Photos, videos and RAW files (personal data; tests generate their own images).
+# Must cover every type in config.py (checked by tests/test_config.py).
+*.jpg
+*.jpeg
+*.heic
+*.heif
+*.tif
+*.tiff
+# RAW
+*.3fr
+*.ari
+*.arw
+*.braw
+*.cr2
+*.cr3
+*.crw
+*.dcr
+*.dng
+*.erf
+*.fff
+*.gpr
+*.iiq
+*.kdc
+*.mef
+*.mos
+*.mrw
+*.nef
+*.nrw
+*.orf
+*.ori
+*.pef
+*.r3d
+*.raf
+*.raw
+*.rw2
+*.rwl
+*.sr2
+*.srf
+*.srw
+*.x3f
+# Video
+*.3gp
+*.avi
+*.m2ts
+*.m4v
+*.mkv
+*.mov
+*.mp4
+*.mpeg
+*.mpg
+*.mts
+*.ogg
+*.ogv
+*.wmv
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+env/
+*.egg-info/
+build/
+dist/
+
+# Exports that may contain personal data (album lists, logs)
+albums_export.csv
+/*.csv
+scripts/*.csv
+*.log
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

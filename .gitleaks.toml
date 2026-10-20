@@ -1,0 +1,23 @@
+# Gitleaks configuration: the default rule set plus Flickr-specific rules.
+# Used by the pre-commit hook and by the CI secret scan.
+
+title = "flickr-uploader"
+
+[extend]
+useDefault = true
+
+# OAuth access tokens look like "72157626737672178-022bbd2f4c2f3432".
+[[rules]]
+id = "flickr-oauth-token"
+description = "Flickr OAuth access token"
+regex = '''\b72157\d{12}-[0-9a-f]{16}\b'''
+keywords = ["72157"]
+
+# API key (32 hex) or secret (16 hex) next to a name like FLICKR_API_KEY,
+# whether assigned in code (=, :) or passed to a command (setx NAME "value").
+[[rules]]
+id = "flickr-api-credential"
+description = "Flickr API key or secret"
+regex = '''(?i)flickr\w*(?:key|secret|token)\w*["']?(?:\s*[:=,]\s*|\s+)["']?([0-9a-f]{32}|[0-9a-f]{16})\b'''
+secretGroup = 1
+keywords = ["flickr"]
