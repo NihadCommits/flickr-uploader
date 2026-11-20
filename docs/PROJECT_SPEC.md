@@ -22,7 +22,7 @@ und mit dem Aufnahmedatum in den Dateien (siehe "Download").
   (umgesetzt, siehe Album-Abgleich)
 - Dry-Run-Modus, Video-Splitting → Phase 3
 - EXIF in heruntergeladene Fotos schreiben, für die Flickr kein Original
-  anbietet → Phase 2, falls nötig (bräuchte eine neue Abhängigkeit)
+  anbietet → Phase 2 (umgesetzt ohne neue Abhängigkeit, siehe Download)
 
 **Nie, in keiner Phase:** Fotos öffentlich oder für Freunde/Familie sichtbar
 hochladen oder die Sichtbarkeit von Fotos lockern. Jeder Upload ist privat und
@@ -709,8 +709,12 @@ wurden.
     gelesen, der Explorer zeigt also genau die Uhrzeit, die Flickr zeigt.
   - Kennt Flickr das Datum nicht (`datetakenunknown`), wird nichts eingetragen.
     Flickr zeigt dann das Upload-Datum, und das wäre falsch.
-  - Fotos ohne Original (umgerechnete JPEGs ohne EXIF) bekommen nur das
-    Dateidatum. EXIF hineinzuschreiben ist nicht vorgesehen, siehe Nicht-Ziele.
+  - Fotos ohne Original (umgerechnete JPEGs ohne EXIF) bekommen seit Phase 2
+    einen EXIF-Block mit `DateTimeOriginal`, `DateTimeDigitized` und
+    `DateTime` (`filedates.fill_jpeg_date`, gebaut mit Pillow). Nur dieser
+    Block wird ersetzt bzw. eingefügt, die Bilddaten bleiben Byte für Byte
+    gleich, geschrieben über eine `.part`-Datei. Hat das JPEG schon ein
+    Aufnahmedatum, bleibt es unangetastet.
 - **Wiederholen:** Was im Album-Unterordner schon liegt (gleicher Name, egal
   welche Endung), wird übersprungen. Ein erneuter Download lädt nur, was fehlt,
   und trägt fehlende Daten auch in die vorhandenen Dateien nach. Ein Abbruch

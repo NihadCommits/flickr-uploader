@@ -6,21 +6,29 @@ the time it was downloaded. This writes the date Flickr knows instead:
 - into the MP4/MOV header (mvhd, tkhd, mdhd), only if the file has none: a
   few bytes change in place, the video itself is not re-encoded. Explorer
   shows it as "Medium erstellt"
+- into JPEGs without a capture date (Flickr's sizes below the original): an
+  EXIF block with DateTimeOriginal is put in front of the image data, which
+  stays byte for byte the same. Explorer shows it as "Aufnahmedatum"
 - as the file's created and modified date
 
 Meant for the tool's own downloads only, never for files in the photo archive.
 """
 
+import io
 import os
 import struct
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from PIL import ExifTags, Image
+
 from flickr_uploader import config
 
 FLICKR_TIME = "%Y-%m-%d %H:%M:%S"
 QUICKTIME_EXTENSIONS = frozenset({".mp4", ".mov", ".m4v", ".3gp"})
+JPEG_EXTENSIONS = frozenset({".jpg", ".jpeg"})
+EXIF_TIME = "%Y:%m:%d %H:%M:%S"
 MAX_MOOV_BYTES = 64 * 1024 * 1024  # the header box; far larger means something is off
 
 # MP4/MOV keep their dates in these boxes, as seconds since 1904 (UTC).
@@ -51,9 +59,66 @@ def apply_date(path: str | os.PathLike, when: datetime) -> bool:
     file's created and modified dates are always set.
     """
     path = Path(path)
-    filled = path.suffix.lower() in QUICKTIME_EXTENSIONS and fill_container_date(path, when)
+    suffix = path.suffix.lower()
+    filled = (suffix in QUICKTIME_EXTENSIONS and fill_container_date(path, when)) or (
+        suffix in JPEG_EXTENSIONS and fill_jpeg_date(path, when)
+    )
     set_file_times(path, when)
     return filled
+
+
+def fill_jpeg_date(path: str | os.PathLike, when: datetime) -> bool:
+    """Put `when` into a JPEG's EXIF if it has no capture date; True if written.
+
+    Only the EXIF block (APP1) is replaced or added, the compressed image data
+    is copied unchanged. Written to a new file first, then swapped in.
+    """
+    target = config.filesystem_path(path)
+    with open(target, "rb") as file:
+        data = file.read()
+    if data[:2] != b"\xff\xd8":
+        return False
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            exif = image.getexif()
+            details = exif.get_ifd(ExifTags.IFD.Exif)  # read while the image is open
+    except (OSError, SyntaxError, ValueError):  # not a readable JPEG: leave it alone
+        return False
+    if details.get(ExifTags.Base.DateTimeOriginal):
+        return False  # the camera's own date wins
+    # Flickr's time is camera local time; `when` is that time read as local.
+    stamp = when.astimezone().strftime(EXIF_TIME)
+    details[ExifTags.Base.DateTimeOriginal] = stamp
+    details[ExifTags.Base.DateTimeDigitized] = stamp
+    exif[ExifTags.Base.DateTime] = stamp
+    block = exif.tobytes()
+    if len(block) + 2 > 0xFFFF:
+        return False
+    rest = _without_exif(data)
+    if rest is None:
+        return False
+    partial = Path(str(target) + ".part")
+    with open(partial, "wb") as file:
+        file.write(b"\xff\xd8\xff\xe1" + struct.pack(">H", len(block) + 2) + block + rest)
+    os.replace(partial, target)
+    return True
+
+
+def _without_exif(data: bytes) -> bytes | None:
+    """The JPEG after its start marker, minus any EXIF block; None if unreadable."""
+    position, kept = 2, []
+    while position + 4 <= len(data) and data[position] == 0xFF:
+        marker = data[position + 1]
+        if marker == 0xDA:  # start of the image data: the rest stays as it is
+            break
+        (length,) = struct.unpack(">H", data[position + 2 : position + 4])
+        segment = data[position : position + 2 + length]
+        if not (marker == 0xE1 and segment[4:10] == b"Exif\x00\x00"):
+            kept.append(segment)
+        position += 2 + length
+    else:
+        return None
+    return b"".join(kept) + data[position:]
 
 
 def fill_container_date(path: str | os.PathLike, when: datetime) -> bool:
