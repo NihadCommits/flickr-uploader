@@ -324,6 +324,7 @@ def test_only_public_methods_reach_the_page():
         "pause_job",
         "refresh_albums",
         "remove_album_folder",
+        "rename_flickr_album",
         "rename_planned_album",
         "reopen_login_page",
         "reset_choice",
@@ -753,3 +754,31 @@ def test_another_account_is_refused_once_there_is_data(database):
     assert status["logged_in"] is False
     assert "anderes Flickr-Konto" in status["message"]
     assert "anderes Flickr-Konto" in api.start_upload()["error"]
+
+
+def test_rename_an_album_on_flickr(api, flickr):
+    flickr.add_album("2026-06 Portugal")
+    root_id = api.add_root()["root_id"]
+    api.refresh_albums()
+    album = api.make_album_folder(folder(api.tree(root_id), "2026-06 Portugal")["id"])["album_id"]
+    assert api.rename_flickr_album(album, "  Portugal 2026 ") == {}
+    assert [a.title for a in flickr.sets.values()] == ["Portugal 2026"]
+    assert [a["title"] for a in api.flickr_albums()["albums"]] == ["Portugal 2026"]
+    assert "leer" in api.rename_flickr_album(album, "  ")["error"]
+
+
+def test_rename_waits_when_flickr_is_away(api, flickr):
+    flickr.add_album("2026-06 Portugal")
+    root_id = api.add_root()["root_id"]
+    api.refresh_albums()
+    album = api.make_album_folder(folder(api.tree(root_id), "2026-06 Portugal")["id"])["album_id"]
+    flickr.fail_before["rename_album"].append(FlickrUnavailableError("offline"))
+    assert "vorgemerkt" in api.rename_flickr_album(album, "Portugal 2026")["error"]
+    api.refresh_albums()  # the next sync sends it
+    assert [a.title for a in flickr.sets.values()] == ["Portugal 2026"]
+
+
+def test_planned_albums_are_not_renamed_on_flickr(api):
+    root_id = api.add_root()["root_id"]
+    album = api.make_album_folder(folder(api.tree(root_id), "2026-06 Portugal")["id"])["album_id"]
+    assert "schon auf Flickr" in api.rename_flickr_album(album, "Neu")["error"]

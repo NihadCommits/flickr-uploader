@@ -62,14 +62,20 @@ function albumSection(folder, context, act) {
   const album = folder.album;
   const planned = album.state === "planned";
   const kind = { green: "ok", blue: "", yellow: "warn" }[album.light];
-  const title = el("input", { type: "text", value: album.title, disabled: !planned, "aria-label": "Albumtitel" });
+  const onFlickr = album.state === "exists";
+  const title = el("input", { type: "text", value: album.title, disabled: !planned && !onFlickr, "aria-label": "Albumtitel" });
+  const rename = planned
+    ? el("button", { class: "btn", text: "Ändern", onclick: () => act.renameAlbum(album.id, title.value) })
+    : onFlickr
+      ? el("button", { class: "btn", text: "Auf Flickr umbenennen", onclick: () => act.renameOnFlickr(album.id, album.title, title.value) })
+      : null;
   return el(
     "div",
     { class: "section" },
     el("p", { class: "section-title", text: "Album" }),
     el("div", { class: `note ${kind}` }, dot(album.light, LIGHT_LABELS[album.light]), el("span", { text: album.light_text })),
     el("label", { class: "field-label", text: planned ? "Titel des neuen Albums" : "Album auf Flickr" }),
-    el("div", { class: "field" }, title, planned ? el("button", { class: "btn", text: "Ändern", onclick: () => act.renameAlbum(album.id, title.value) }) : null),
+    el("div", { class: "field" }, title, rename),
     album.state === "exists" && album.photo_count !== null
       ? el("p", { class: "muted small", text: `Auf Flickr: ${count(album.photo_count, "Foto", "Fotos")}, ${count(album.video_count, "Video", "Videos")}` })
       : null,

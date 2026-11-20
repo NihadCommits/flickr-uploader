@@ -261,6 +261,15 @@ const actions = {
   async renameAlbum(albumId, title) {
     if (await call("rename_planned_album", albumId, title)) await afterChange("Albumtitel geändert");
   },
+  async renameOnFlickr(albumId, oldTitle, newTitle) {
+    if (!newTitle.trim() || newTitle.trim() === oldTitle) return;
+    const sure = await showDialog("Album auf Flickr umbenennen?", `„${oldTitle}“ heißt danach auf Flickr „${newTitle.trim()}“. Fotos und Beschreibung bleiben unverändert.`, {
+      okLabel: "Umbenennen",
+      cancel: true,
+    });
+    if (sure && (await call("rename_flickr_album", albumId, newTitle))) await afterChange("Album auf Flickr umbenannt");
+    else await renderFolders();
+  },
   async confirmNew(albumId) {
     if (await call("confirm_new_album", albumId)) await afterChange("Es wird ein neues Album angelegt");
   },

@@ -21,7 +21,7 @@ where = ["src"]
 
 # The web frontend (HTML, CSS, JS, fonts) ships inside the package.
 [tool.setuptools.package-data]
-"flickr_uploader.gui" = ["web/**/*"]
+"flickr_uploader.gui" = ["web/**/*", "icon.ico"]
 
 [tool.ruff]
 line-length = 100

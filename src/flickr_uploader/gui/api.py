@@ -219,6 +219,33 @@ class Api:
             return {"error": "Dieses Album ist schon auf Flickr; umbenennen geht dort."}
         return {}
 
+    def rename_flickr_album(self, album_id: int, title: str) -> dict:
+        """Rename an album that is on Flickr (the page asked the user first)."""
+        try:
+            client = self._flickr()
+        except auth.AuthError as error:
+            return {"error": _login_error(error)}
+        try:
+            with self._database.connect() as conn:
+                albums.rename_on_flickr(conn, client, album_id, title)
+                album = conn.execute(
+                    "SELECT title, pending_title FROM albums WHERE id = ?", (album_id,)
+                ).fetchone()
+        except ValueError:
+            return {"error": "Der Albumtitel darf nicht leer sein."}
+        except albums.AlbumError:
+            return {"error": "Nur Alben, die schon auf Flickr sind, lassen sich dort umbenennen."}
+        except FlickrClientError as error:
+            return {
+                "error": f"Flickr ist gerade nicht erreichbar ({error}). Die Umbenennung ist "
+                "vorgemerkt und wird beim nächsten Abgleich nachgeholt."
+            }
+        if album["pending_title"] is not None:
+            return {"error": "Die Umbenennung ist vorgemerkt, der nächste Abgleich sendet sie."}
+        if album["title"] != title.strip():
+            return {"error": "Flickr hat die Umbenennung abgelehnt. Details stehen im Protokoll."}
+        return {}
+
     def confirm_new_album(self, album_id: int) -> dict:
         try:
             with self._database.connect() as conn:

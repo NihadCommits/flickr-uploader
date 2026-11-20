@@ -927,7 +927,12 @@ dessen gemischte Fehlersignale in vier klare Fälle:
   durchsuchbare Liste der eigenen Flickr-Alben (Anzahl Fotos/Videos, von
   welchen Ordnern verwendet, Stand des letzten Abgleichs). Einem Album-Ordner
   kann im Detailbereich ein vorhandenes Flickr-Album zugewiesen werden, wenn
-  es dort anders heißt.
+  es dort anders heißt. Ein Album, das schon auf Flickr ist, lässt sich dort
+  nach einer Rückfrage auch umbenennen (`rename_flickr_album()`, Ablauf siehe
+  "Albumnamen manuell anpassen", Punkt 4).
+- **Start per Doppelklick:** eine Windows-Verknüpfung auf
+  `.venv\Scripts\pythonw.exe -m flickr_uploader` (ohne Konsolenfenster) mit
+  dem App-Symbol `gui/icon.ico`.
 - Geprüft am 2026-09-30: pywebview 6.2.1 läuft unter Python 3.13 auf dem
   Zielsystem (Renderer edgechromium, Aufrufe JS → Python funktionieren).
 - **Start:** `python -m flickr_uploader` (`gui/app.py`): DB öffnen (Sperre,
