@@ -26,7 +26,6 @@ to your PC.
 - **Download albums.** For each album choose videos, photos or everything.
   Files come as originals where Flickr has them, with the recording date
   written into them, each album in its own folder.
-
 - **Large and long videos.** Videos over Flickr's 1 GB limit go up
   compressed or split into parts, your choice per video (or a default in
   the settings). Videos over 10 minutes, which Flickr only partly plays,

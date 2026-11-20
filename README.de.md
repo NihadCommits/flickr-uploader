@@ -27,7 +27,6 @@ den PC herunterlädt.
 - **Alben herunterladen.** Pro Album wählst du Videos, Fotos oder alles. Die
   Dateien kommen als Original, wo Flickr es hat, mit eingetragenem
   Aufnahmedatum, jedes Album in einem eigenen Ordner.
-
 - **Große und lange Videos.** Videos über Flickrs Grenze von 1 GB gehen
   komprimiert oder in Teile aufgeteilt hoch, wie du es pro Video wählst
   (oder als Vorgabe in den Einstellungen). Videos über 10 Minuten, die Flickr
