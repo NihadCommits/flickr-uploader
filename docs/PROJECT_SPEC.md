@@ -17,10 +17,13 @@ Filter nur Videos, nur Fotos oder alles, als Original, wo Flickr es anbietet,
 und mit dem Aufnahmedatum in den Dateien (siehe "Download").
 
 ## Nicht-Ziele in Phase 1 (bewusst verschoben)
-- Video-Kompression / Ziel-Bitrate-Berechnung → Phase 2
+- Video-Kompression / Ziel-Bitrate-Berechnung → Phase 2 (umgesetzt, siehe
+  "Zu große und lange Videos")
 - Fuzzy-Matching-Warnsystem für ähnliche (nicht gleiche) Albennamen → Phase 2
   (umgesetzt, siehe Album-Abgleich)
-- Dry-Run-Modus, Video-Splitting → Phase 3
+- Dry-Run-Modus → Phase 3
+- Video-Splitting → Phase 3, vorgezogen in Phase 2 (siehe "Zu große und lange
+  Videos")
 - EXIF in heruntergeladene Fotos schreiben, für die Flickr kein Original
   anbietet → Phase 2 (umgesetzt ohne neue Abhängigkeit, siehe Download)
 
@@ -669,6 +672,54 @@ Läufe, die noch auf `running` stehen, als `crashed` markiert.
   einsortiert, 0 Fehler und 0 unklar. Die RAW-Datei wurde übersprungen. Die
   3 MTS-Videos gingen erst mit Dateiendung im Upload durch (siehe
   Flickr-Client).
+
+## Zu große und lange Videos (Phase 2)
+
+Gewünscht am 2026-11-20: Ein Video über Flickrs Grenze von 1 GB wird nicht
+mehr nur übersprungen. Der Nutzer entscheidet pro Video, ob es **komprimiert**
+oder **aufgeteilt** hochgeladen wird. Videos über 10 Minuten (so viel spielt
+Flickr bei Pro ab, Free 3 Minuten) lassen sich ebenfalls aufteilen, sonst
+werden sie wie bisher ganz hochgeladen.
+
+- **Werkzeug:** ffmpeg aus dem Paket `imageio-ffmpeg` (gepinnt, bringt die
+  ffmpeg.exe mit, kein PATH nötig). Die Länge liest `ffmpeg -i` (kein ffprobe
+  im Paket). Gekapselt in `videotools.py`. ffmpeg läuft ohne Konsolenfenster
+  und wird beim Pausieren sofort beendet.
+- **Das Archiv bleibt unberührt:** Komprimierte Fassungen und Teile entstehen
+  im Arbeitsordner `work\` neben der Datenbank und werden nach dem Hochladen
+  gelöscht. Vorher wird geprüft, ob dort genug Platz frei ist.
+- **Komprimieren:** H.264 + AAC in MP4, Zielgröße 900 MB, die Bitrate
+  errechnet sich aus der Länge. Liegt sie für die Auflösung zu niedrig, wird
+  auf 720p verkleinert. Ist das Ergebnis doch über 1 GB, folgt ein zweiter
+  Versuch mit 15 % weniger, danach Fehler mit Hinweis aufs Aufteilen.
+- **Aufteilen:** gleich lange Teile, so viele, dass jedes höchstens 800 MB und
+  10 Minuten hat. Ohne Neukodierung (`-c copy`), also verlustfrei und schnell;
+  geschnitten wird am nächsten Schlüsselbild, die Teile überlappen deshalb um
+  bis zu wenige Sekunden. Gleiches Containerformat wie das Original. Titel:
+  "<Name> (Teil 2 von 3)". Die Metadaten (Aufnahmedatum) gehen mit.
+- **Entscheidung:** pro Video im Detailbereich eines angehakten Ordners, dazu
+  zwei Vorgaben in den Einstellungen: zu große Videos "jedes Mal fragen"
+  (Standard), "immer komprimieren" oder "immer aufteilen"; lange Videos "ganz
+  hochladen" (Standard) oder "aufteilen". Ein zu großes Video ohne
+  Entscheidung wartet (zählt als "wartet auf Entscheidung", nicht als
+  übersprungen). Sobald ein Teil hochgeladen ist, ist die Wahl fest.
+- **Ein Teil ist ein eigenes Foto** mit allem, was dazugehört (Zustandsautomat,
+  `getInfo`, privat, Album). Sein Prüfwert ist kein Datei-Hash, denn eine neue
+  Kodierung ergibt jedes Mal andere Bytes, sondern XXH3-128 über "Hash des
+  Originals | Wahl | Teil/Anzahl | Verfahrensversion". Er ist also bei jedem
+  Lauf gleich, und der Duplikatschutz per Hash-Tag greift wie bei Fotos.
+- **Ablauf pro Video:** Original hashen (Wert in `video_plans`), Teile planen
+  und mit ihren Prüfwerten als `pending` committen (Absicht zuerst), dann pro
+  Teil: Datei erzeugen, hochladen, Datei löschen, prüfen, ins Album. Ein
+  `unclear` Teil wird wie ein Foto erst per Hash-Tag gesucht und nur bei
+  Bedarf neu erzeugt.
+- **Abgleich (Pre-Check):** Hat der Nutzer ein Video schon als altes
+  Flickr-Foto bestätigt ("Ist dasselbe Foto"), wird es übernommen, egal was
+  geplant war.
+
+**DB-Änderungen** (Migration v3): `files.duration_seconds` (Länge von Videos,
+gelesen sobald ihr Ordner angehakt ist), Tabellen `video_plans` und
+`video_parts`.
 
 ## Download (Flickr → PC)
 

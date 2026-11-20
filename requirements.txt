@@ -11,3 +11,6 @@ pillow==12.3.0
 xxhash==4.0.1
 # GUI: native window rendering the HTML frontend (Edge WebView2 on Windows).
 pywebview==6.2.1
+# ffmpeg (bundled executable) to compress or split videos too large or too long
+# for Flickr (videotools.py).
+imageio-ffmpeg==0.8.1
