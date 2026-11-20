@@ -21,18 +21,33 @@ The rules behind it (docs/PROJECT_SPEC.md):
 - A photo only counts as done once getInfo confirms it: own, tagged, private.
 - Files with open pre-check matches, and albums waiting for the user's
   decision (yellow), are left out.
+- A video too large (or, if chosen, too long) for Flickr goes up compressed
+  or in pieces (videoplans.py); each piece is a photo with its own fixed
+  digest. Pieces are made by ffmpeg in the work folder, never in the archive.
 - A problem with one file is logged and the run goes on; a rejected login or a
   lasting loss of connection ends the run.
 """
 
 import os
+import shutil
 import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
-from flickr_uploader import albums, config, db, hashing, jobs, precheck, scanner
+from flickr_uploader import (
+    albums,
+    config,
+    db,
+    hashing,
+    jobs,
+    precheck,
+    scanner,
+    videoplans,
+    videotools,
+)
 from flickr_uploader.flickr_client import (
     CancelledError,
     FlickrAuthError,
@@ -81,6 +96,31 @@ class _File:
     hash: str | None
     status: str
     folder_id: int
+    duration_seconds: float | None = None
+
+    def row(self) -> dict:
+        """What videoplans needs to know about the file."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "status": self.status,
+            "duration_seconds": self.duration_seconds,
+        }
+
+
+@dataclass(frozen=True)
+class _Piece:
+    """One piece of a video that goes up compressed or split."""
+
+    choice: str
+    part: int
+    parts: int
+
+    def title(self, file: _File) -> str:
+        name = os.path.splitext(file.name)[0]
+        if self.parts == 1:
+            return name
+        return f"{name} (Teil {self.part} von {self.parts})"
 
 
 def run_upload(
@@ -90,15 +130,19 @@ def run_upload(
     cancel: CancelFlag | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
     sleep: Callable[[float], None] = time.sleep,
+    work_dir: str | os.PathLike | None = None,
 ) -> RunReport:
     """Upload everything ticked that is not on Flickr yet and return the summary.
 
-    Raises jobs.JobInProgressError if an upload or download is running.
+    `work_dir` takes compressed videos and video pieces for the moment of their
+    upload (default: "work" next to the database). Raises
+    jobs.JobInProgressError if an upload or download is running.
     """
+    work = Path(work_dir) if work_dir else database.path.parent / "work"
     with jobs.exclusive():
         database.backup()
         with database.connect() as conn:
-            return _Run(conn, client, cancel, now, sleep).execute()
+            return _Run(conn, client, cancel, now, sleep, work).execute()
 
 
 def reset_failed(conn: sqlite3.Connection, photo_hash: str) -> None:
@@ -107,16 +151,17 @@ def reset_failed(conn: sqlite3.Connection, photo_hash: str) -> None:
 
 
 class _Run:
-    def __init__(self, conn, client, cancel, now, sleep) -> None:
+    def __init__(self, conn, client, cancel, now, sleep, work_dir: Path) -> None:
         self.conn, self.client, self.cancel = conn, client, cancel
         self.now, self.sleep = now, sleep
+        self.work_dir = work_dir
         self.report = RunReport()
         self.run_id: int | None = None
         self.lights: dict[int, str] = {}
         self.album_of_folder: dict[int, int | None] = {}
         self.reported_albums: set[int] = set()
         self.pairs: set[tuple[int, str]] = set()  # (album, photo) of files done this run
-        self.deferred: list[_File] = []
+        self.deferred: list[tuple[_File, str]] = []  # (file, digest) without answer
         self.connection_failures = 0
 
     def execute(self) -> RunReport:
@@ -182,11 +227,17 @@ class _Run:
             except FlickrClientError as error:
                 path = scanner.folder_path(folder["path"], folder["rel_path"])
                 self.log("warning", f"Pre-check of {path} failed ({error}); its files wait")
+        # The length of videos decides whether they are "long" (may be split).
+        for (folder_id,) in self.conn.execute(
+            "SELECT id FROM folders WHERE included = 1 AND missing = 0"
+        ).fetchall():
+            self.check_cancel()
+            videoplans.read_durations(self.conn, folder_id, cancel=self.cancel)
 
     def files(self) -> list[_File]:
         rows = self.conn.execute(
             "SELECT f.id, f.name, f.size_bytes, f.mtime_ns, f.hash, f.status, f.folder_id, "
-            "d.rel_path, r.path AS root_path "
+            "f.duration_seconds, d.rel_path, r.path AS root_path "
             "FROM files f JOIN folders d ON d.id = f.folder_id JOIN roots r ON r.id = d.root_id "
             "WHERE d.included = 1 AND d.missing = 0 AND f.status != 'missing' "
             "ORDER BY r.path, d.rel_path, f.name"
@@ -203,12 +254,13 @@ class _Run:
                 hash=row["hash"],
                 status=row["status"],
                 folder_id=row["folder_id"],
+                duration_seconds=row["duration_seconds"],
             )
             for row in rows
         ]
 
     def handle(self, file: _File, *, final: bool = False) -> None:
-        if file.status in _SKIPPED:
+        if file.status in _SKIPPED and not videoplans.too_large(file.row()):
             level, reason = _SKIPPED[file.status]
             self.log(level, f"Skipped ({reason}): {file.path}", file_id=file.id)
             self.report.skipped += 1
@@ -231,11 +283,20 @@ class _Run:
         if not precheck.is_cleared(self.conn, file.id):
             self.wait(file, "pre-check missing or a match waits for your decision")
             return
+        how = videoplans.choice(self.conn, file.row())
+        if how is None:
+            self.wait(file, "video too large for Flickr: choose to compress or to split it")
+            return
+        if precheck.chosen_flickr_photo(self.conn, file.id):
+            how = videoplans.ORIGINAL  # the user said it is on Flickr already
 
         failures = self.connection_failures
         try:
             with jobs.flickr_step():
-                self.advance(file, album_id, final=final)
+                if how == videoplans.ORIGINAL:
+                    self.advance(file, album_id, final=final)
+                else:
+                    self.advance_video(file, album_id, how, final=final)
         except FlickrUnavailableError as error:
             self.log("warning", f"No connection to Flickr ({error}): {file.path}", file_id=file.id)
             self.connection_failed()
@@ -251,6 +312,41 @@ class _Run:
         digest = self.digest(file)
         if digest is None:
             return
+        self.advance_photo(file, album_id, digest, final=final)
+
+    def advance_video(self, file: _File, album_id: int, how: str, *, final: bool) -> None:
+        """Plan a video's pieces once, then move each one along like a photo."""
+        source = self.source_hash(file)
+        if source is None:
+            return
+        digests = videoplans.planned_parts(self.conn, file.id, source)
+        if digests is None:
+            parts = 1
+            if how == videoplans.SPLIT:
+                try:
+                    info = videotools.probe(file.path)
+                except videotools.VideoToolError as error:
+                    self.log("error", f"Video not readable ({error}): {file.path}", file_id=file.id)
+                    self.report.failed += 1
+                    return
+                parts = videotools.split_count(
+                    file.size_bytes,
+                    info.duration,
+                    config.VIDEO_PART_BYTES,
+                    config.LONG_VIDEO_SECONDS,
+                )
+            digests = videoplans.plan_parts(self.conn, file.id, how, source, parts)
+            what = "compressed" if how == videoplans.COMPRESS else f"split into {parts} parts"
+            self.log("info", f"Video goes up {what}: {file.path}", file_id=file.id)
+        for part, digest in enumerate(digests, start=1):
+            self.check_cancel()
+            piece = _Piece(how, part, len(digests))
+            self.advance_photo(file, album_id, digest, final=final, piece=piece)
+
+    def advance_photo(
+        self, file: _File, album_id: int, digest: str, *, final: bool, piece: _Piece | None = None
+    ) -> None:
+        """The photo (or video piece) `digest` of a file, as far as it gets."""
         self.conn.execute(
             "INSERT OR IGNORE INTO album_photos (album_id, photo_hash, state, updated_at) "
             "VALUES (?, ?, 'pending', ?)",
@@ -273,8 +369,11 @@ class _Run:
         if state == "unclear":
             state = self.look_up(digest)
         if state == "pending":
-            chosen = precheck.chosen_flickr_photo(self.conn, file.id)
-            state = self.adopt(file, digest, chosen) if chosen else self.upload(file, digest)
+            if piece is not None:
+                state = self.upload_piece(file, digest, piece)
+            else:
+                chosen = precheck.chosen_flickr_photo(self.conn, file.id)
+                state = self.adopt(file, digest, chosen) if chosen else self.upload(file, digest)
         if state == "uploaded":
             state = self.verify(file, digest)
         if state == "verified":
@@ -284,7 +383,7 @@ class _Run:
             if final:
                 self.report.unclear += 1
             else:
-                self.deferred.append(file)
+                self.deferred.append((file, digest))
         elif state == "failed":
             self.report.failed += 1
 
@@ -330,7 +429,90 @@ class _Run:
             )
         return result.digest
 
-    def upload(self, file: _File, digest: str) -> str:
+    def source_hash(self, file: _File) -> str | None:
+        """The hash of a video's original (stored with its plan); None if it can't be read."""
+        location = config.filesystem_path(file.path)
+        try:
+            info = os.stat(location)
+        except OSError as error:
+            self.unreadable(file, error)
+            return None
+        if (info.st_size, info.st_mtime_ns) != (file.size_bytes, file.mtime_ns):
+            self.wait(file, "changed since the last scan, scan again")
+            return None
+        planned = self.conn.execute(
+            "SELECT source_hash FROM video_plans WHERE file_id = ?", (file.id,)
+        ).fetchone()
+        if planned is not None and planned["source_hash"]:
+            return planned["source_hash"]  # the scanner drops the plan when the file changes
+        try:
+            result = hashing.hash_file(location, cancel=self.cancel)
+        except hashing.HashingCancelledError:
+            raise jobs.Cancelled from None
+        except hashing.FileChangedError:
+            self.wait(file, "changed while it was read, scan again")
+            return None
+        except OSError as error:
+            self.unreadable(file, error)
+            return None
+        return result.digest
+
+    def upload_piece(self, file: _File, digest: str, piece: _Piece) -> str:
+        """Make the piece with ffmpeg in the work folder, upload it, delete it again."""
+        path = self.make_piece(file, digest, piece)
+        if path is None:
+            return self.photo(digest)["state"]
+        try:
+            return self.upload(file, digest, path=str(path), title=piece.title(file))
+        finally:
+            path.unlink(missing_ok=True)
+
+    def make_piece(self, file: _File, digest: str, piece: _Piece) -> Path | None:
+        compress = piece.choice == videoplans.COMPRESS
+        expected = config.VIDEO_COMPRESS_BYTES if compress else file.size_bytes // piece.parts
+        self.work_dir.mkdir(parents=True, exist_ok=True)
+        if shutil.disk_usage(self.work_dir).free < expected * 1.2 + 100 * config.MB:
+            self.wait(file, f"not enough free space for the video in {self.work_dir}")
+            return None
+        suffix = ".mp4" if compress else os.path.splitext(file.name)[1].lower()
+        target = self.work_dir / f"{file.id}-{piece.part}{suffix}"
+        try:
+            info = videotools.probe(file.path)
+            if compress:
+                self.log("info", f"Compressing video (this takes a while): {file.path}")
+                videotools.compress(
+                    file.path, target, info, config.VIDEO_COMPRESS_BYTES, cancel=self.cancel
+                )
+                if target.stat().st_size > config.MAX_VIDEO_BYTES:  # one more, smaller try
+                    smaller = int(config.VIDEO_COMPRESS_BYTES * 0.85)
+                    videotools.compress(file.path, target, info, smaller, cancel=self.cancel)
+            else:
+                length = info.duration / piece.parts
+                last = piece.part == piece.parts
+                self.log("info", f"Cutting part {piece.part} of {piece.parts}: {file.path}")
+                videotools.cut(
+                    file.path,
+                    target,
+                    length * (piece.part - 1),
+                    None if last else length,
+                    cancel=self.cancel,
+                )
+            if target.stat().st_size > config.MAX_VIDEO_BYTES:
+                hint = "split it instead" if compress else "compress it instead"
+                raise videotools.VideoToolError(f"still larger than Flickr allows; {hint}")
+        except videotools.VideoCancelledError:
+            raise jobs.Cancelled from None
+        except (videotools.VideoToolError, OSError) as error:
+            target.unlink(missing_ok=True)
+            reason = _describe(error)
+            db.set_state(self.conn, db.PHOTOS, digest, "failed", last_error=reason)
+            self.log("error", f"Video piece not made ({reason}): {file.path}", file_id=file.id)
+            return None
+        return target
+
+    def upload(
+        self, file: _File, digest: str, *, path: str | None = None, title: str | None = None
+    ) -> str:
         photo = self.photo(digest)
         db.set_state(
             self.conn,
@@ -343,7 +525,10 @@ class _Run:
         )
         try:
             flickr_id = self.client.upload(
-                file.path, title=os.path.splitext(file.name)[0], digest=digest, cancel=self.cancel
+                path or file.path,
+                title=title or os.path.splitext(file.name)[0],
+                digest=digest,
+                cancel=self.cancel,
             )
         except OutcomeUnknownError as error:
             db.set_state(self.conn, db.PHOTOS, digest, "unclear", last_error=str(error))
@@ -509,8 +694,8 @@ class _Run:
         if not self.deferred:
             return
         started = [
-            datetime.fromisoformat(self.photo(self.file_hash(file))["upload_started_at"])
-            for file in self.deferred
+            datetime.fromisoformat(self.photo(digest)["upload_started_at"])
+            for _, digest in self.deferred
         ]
         remaining = (max(started) + SEARCH_INDEX_GRACE - self.now()).total_seconds()
         if remaining > 0:
@@ -524,7 +709,8 @@ class _Run:
                 step = min(1.0, remaining)
                 self.sleep(step)
                 remaining -= step
-        for file in self.deferred:
+        files = {file.id: file for file, _ in self.deferred}  # a video only once
+        for file in files.values():
             self.check_cancel()
             self.handle(file, final=True)
 
@@ -596,9 +782,6 @@ class _Run:
 
     def photo(self, digest: str) -> sqlite3.Row:
         return self.conn.execute("SELECT * FROM photos WHERE hash = ?", (digest,)).fetchone()
-
-    def file_hash(self, file: _File) -> str:
-        return self.conn.execute("SELECT hash FROM files WHERE id = ?", (file.id,)).fetchone()[0]
 
     def wait(self, file: _File, reason: str) -> None:
         self.log("info", f"Waiting ({reason}): {file.path}", file_id=file.id)

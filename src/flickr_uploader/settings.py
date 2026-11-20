@@ -20,6 +20,8 @@ from flickr_uploader.downloader import MEDIA_FILTERS
 DOWNLOAD_TARGET = "download_target"  # last download folder, set by the folder dialog
 DOWNLOAD_MEDIA = "download_media"  # filter preselected when an album is picked
 SYNC_AT_START = "sync_albums_at_start"  # read the album list from Flickr at start
+VIDEO_TOO_LARGE = "video_too_large"  # over 1 GB: "ask", "compress" or "split"
+VIDEO_TOO_LONG = "video_too_long"  # over 10 minutes: "keep" (upload whole) or "split"
 FLICKR_ACCOUNT = "flickr_account"  # {"nsid", "username"}: whose photos the database holds
 
 
@@ -33,6 +35,8 @@ _SETTINGS = {
     DOWNLOAD_TARGET: _Setting(None, lambda value: value is None or _text(value)),
     DOWNLOAD_MEDIA: _Setting("all", lambda value: value in MEDIA_FILTERS),
     SYNC_AT_START: _Setting(True, lambda value: isinstance(value, bool)),
+    VIDEO_TOO_LARGE: _Setting("ask", lambda value: value in ("ask", "compress", "split")),
+    VIDEO_TOO_LONG: _Setting("keep", lambda value: value in ("keep", "split")),
     FLICKR_ACCOUNT: _Setting(None, lambda value: value is None or _account(value)),
 }
 

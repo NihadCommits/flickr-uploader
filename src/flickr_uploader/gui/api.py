@@ -48,7 +48,12 @@ MATCH_REASONS = {
 }
 SETUP_COMMAND = ".venv\\Scripts\\python.exe -m flickr_uploader.auth setup"
 # What the page may change directly; the download folder only comes from the dialog.
-EDITABLE_SETTINGS = (settings.DOWNLOAD_MEDIA, settings.SYNC_AT_START)
+EDITABLE_SETTINGS = (
+    settings.DOWNLOAD_MEDIA,
+    settings.SYNC_AT_START,
+    settings.VIDEO_TOO_LARGE,
+    settings.VIDEO_TOO_LONG,
+)
 
 LIGHT_TEXTS = {
     albums.GREEN: "Album ist auf Flickr und wird verwendet.",

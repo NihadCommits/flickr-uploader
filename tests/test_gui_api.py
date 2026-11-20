@@ -552,6 +552,8 @@ def test_settings_defaults_and_changes(api):
         "download_target": None,
         "download_media": "all",
         "sync_albums_at_start": True,
+        "video_too_large": "ask",
+        "video_too_long": "keep",
         "flickr_account": None,
         "download_target_problem": None,
     }

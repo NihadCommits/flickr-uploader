@@ -511,6 +511,30 @@ CREATE TABLE settings (
 ) STRICT;
 ```
 
+Migration v3 (2026-11-20, siehe "Zu große und lange Videos"):
+
+```sql
+-- Videos: Länge in Sekunden, per ffmpeg gelesen, sobald ihr Ordner angehakt ist.
+ALTER TABLE files ADD COLUMN duration_seconds REAL;
+
+-- Wie ein für Flickr zu großes oder zu langes Video stattdessen hochgeht (Wahl des Nutzers).
+CREATE TABLE video_plans (
+    file_id      INTEGER NOT NULL PRIMARY KEY REFERENCES files(id),
+    choice       TEXT NOT NULL CHECK (choice IN ('original', 'compress', 'split')),
+    source_hash  TEXT,                              -- XXH3-128 des Originals, sobald gelesen
+    parts        INTEGER CHECK (parts >= 1),        -- bekannt, sobald die Teile geplant sind
+    decided_at   TEXT NOT NULL
+) STRICT;
+
+-- Die Teile eines geplanten Videos; jedes ist auf Flickr ein eigenes Foto.
+CREATE TABLE video_parts (
+    file_id     INTEGER NOT NULL REFERENCES video_plans(file_id),
+    part        INTEGER NOT NULL CHECK (part >= 1),
+    photo_hash  TEXT NOT NULL UNIQUE REFERENCES photos(hash),
+    PRIMARY KEY (file_id, part)
+) STRICT;
+```
+
 ## Zustandsautomaten
 
 ### Foto (`photos.state`)
@@ -523,7 +547,8 @@ pending ──(Absicht committet)──▶ uploading ──(Antwort mit ID, sofo
    │                                │                           ├─ 0 Treffer  → pending (erst nach Wartezeit, s. Suchindex)
    │                                │                           └─ >1 Treffer → failed + Bericht (Duplikat, Nutzer entscheidet)
    │                                └──(sicher nichts gesendet)──▶ pending
-   └──(Pre-Check: Nutzer bestätigt "dasselbe Foto")──▶ verified (origin = adopted)
+   ├──(Pre-Check: Nutzer bestätigt "dasselbe Foto")──▶ verified (origin = adopted)
+   └──(Video-Teil ließ sich nicht erzeugen, ffmpeg)──▶ failed
 
 failed ──(Nutzer setzt zurück, Flickr-ID wird geleert)──▶ pending
 ```
@@ -702,7 +727,9 @@ werden sie wie bisher ganz hochgeladen.
   (Standard), "immer komprimieren" oder "immer aufteilen"; lange Videos "ganz
   hochladen" (Standard) oder "aufteilen". Ein zu großes Video ohne
   Entscheidung wartet (zählt als "wartet auf Entscheidung", nicht als
-  übersprungen). Sobald ein Teil hochgeladen ist, ist die Wahl fest.
+  übersprungen). Sobald ein Teil hochgeladen ist, ist die Wahl fest. In
+  `video_plans` steht die Wahl pro Video (`original`, `compress`, `split`);
+  fehlt ein Eintrag, gilt die Vorgabe. Logik in `videoplans.py`.
 - **Ein Teil ist ein eigenes Foto** mit allem, was dazugehört (Zustandsautomat,
   `getInfo`, privat, Album). Sein Prüfwert ist kein Datei-Hash, denn eine neue
   Kodierung ergibt jedes Mal andere Bytes, sondern XXH3-128 über "Hash des
@@ -951,7 +978,9 @@ dessen gemischte Fehlersignale in vier klare Fälle:
   Fenster zu stören. Derzeit: `download_target` (letzter Zielordner, nur über
   den Ordnerdialog gesetzt, der ihn prüft), `download_media` (Vorauswahl beim
   Anhaken: `all`/`photos`/`videos`), `sync_albums_at_start` (Albenliste beim
-  Start holen, Vorgabe an). Zugangsdaten nie.
+  Start holen, Vorgabe an), `video_too_large` (`ask`/`compress`/`split`) und
+  `video_too_long` (`keep`/`split`) für zu große bzw. lange Videos, dazu
+  intern `flickr_account`. Zugangsdaten nie.
 - **Alles lokal:** Alles, was die Seite braucht, liegt unter `gui/web/`.
   Fremde Dateien kämen mit Lizenz nach `gui/web/vendor/`, derzeit gibt es
   keine. Nichts wird aus dem Internet geladen. So ist das Tool

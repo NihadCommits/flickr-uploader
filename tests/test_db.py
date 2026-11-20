@@ -90,6 +90,8 @@ def test_open_creates_current_schema_in_wal_mode(conn):
         "runs",
         "events",
         "settings",
+        "video_plans",
+        "video_parts",
     }
     assert all(row["strict"] for row in tables)
 
@@ -135,16 +137,18 @@ def test_migration_backs_up_the_old_version_first(tmp_path, monkeypatch):
         assert copy.execute("SELECT count(*) FROM photos").fetchone()[0] == 1
 
 
-def test_version_1_database_is_migrated_to_2(tmp_path):
-    """The first real migration: an existing v1 database gets the settings table."""
+def test_version_1_database_is_migrated_to_the_current_version(tmp_path):
+    """Real migrations on an existing v1 database: settings (v2), videos (v3)."""
     path = tmp_path / "state.db"
     with closing(sqlite3.connect(path, isolation_level=None)) as raw:
         raw.executescript(f"BEGIN;{db._SCHEMA_V1}PRAGMA user_version = 1;COMMIT;")
         add_photo(raw)
 
     with db.Database(path) as database, database.connect() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 3
         assert conn.execute("SELECT count(*) FROM photos").fetchone()[0] == 1
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(files)")}
+        assert "duration_seconds" in columns
         conn.execute(
             "INSERT INTO settings (key, value, updated_at) VALUES ('a', '1', ?)", (db.utc_now(),)
         )

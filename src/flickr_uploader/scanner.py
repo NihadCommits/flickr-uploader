@@ -325,10 +325,13 @@ def _sync_files(
             conn.execute(
                 "UPDATE files SET name = ?, size_bytes = ?, mtime_ns = ?, hash = NULL, "
                 "status = ?, taken_at = NULL, width = NULL, height = NULL, "
-                "last_error = NULL, updated_at = ? WHERE id = ?",
+                "duration_seconds = NULL, last_error = NULL, updated_at = ? WHERE id = ?",
                 (name, size, mtime, _target_status(kind, size, False), now, row["id"]),
             )
             conn.execute("DELETE FROM precheck_matches WHERE file_id = ?", (row["id"],))
+            # Pieces already on Flickr stay there; the new content gets its own.
+            conn.execute("DELETE FROM video_parts WHERE file_id = ?", (row["id"],))
+            conn.execute("DELETE FROM video_plans WHERE file_id = ?", (row["id"],))
             conn.execute("UPDATE folders SET prechecked_at = NULL WHERE id = ?", (folder_id,))
             report.changed_files += 1
         else:

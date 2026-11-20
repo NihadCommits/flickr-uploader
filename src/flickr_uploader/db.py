@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 MIN_SQLITE_VERSION = (3, 37, 0)  # first version with STRICT tables
 BUSY_TIMEOUT_SECONDS = 5.0
 DEFAULT_KEEP_BACKUPS = 10
@@ -206,8 +206,30 @@ CREATE TABLE settings (
 ) STRICT;
 """
 
+_SCHEMA_V3 = """
+-- Videos: their length in seconds, read with ffmpeg once their folder is ticked.
+ALTER TABLE files ADD COLUMN duration_seconds REAL;
+
+-- How a video too large or too long for Flickr goes up instead (the user's choice).
+CREATE TABLE video_plans (
+    file_id      INTEGER NOT NULL PRIMARY KEY REFERENCES files(id),
+    choice       TEXT NOT NULL CHECK (choice IN ('original', 'compress', 'split')),
+    source_hash  TEXT,                              -- XXH3-128 of the original, once read
+    parts        INTEGER CHECK (parts >= 1),        -- known once the pieces are planned
+    decided_at   TEXT NOT NULL
+) STRICT;
+
+-- The pieces of a planned video; each one is a photo of its own on Flickr.
+CREATE TABLE video_parts (
+    file_id     INTEGER NOT NULL REFERENCES video_plans(file_id),
+    part        INTEGER NOT NULL CHECK (part >= 1),
+    photo_hash  TEXT NOT NULL UNIQUE REFERENCES photos(hash),
+    PRIMARY KEY (file_id, part)
+) STRICT;
+"""
+
 # Schema version -> SQL that upgrades from the previous version.
-_MIGRATIONS: dict[int, str] = {1: _SCHEMA_V1, 2: _SCHEMA_V2}
+_MIGRATIONS: dict[int, str] = {1: _SCHEMA_V1, 2: _SCHEMA_V2, 3: _SCHEMA_V3}
 
 
 class DatabaseError(Exception):
@@ -291,8 +313,9 @@ PHOTOS = StateMachine(
     key_columns=("hash",),
     state_column="state",
     transitions={
-        # pending -> verified only happens when the user adopts an existing photo.
-        "pending": frozenset({"uploading", "verified"}),
+        # pending -> verified only happens when the user adopts an existing photo;
+        # pending -> failed when a piece of a video could not be made (ffmpeg).
+        "pending": frozenset({"uploading", "verified", "failed"}),
         # uploading -> pending only when nothing can have reached Flickr (file
         # not readable, cancelled before sending, login refused).
         "uploading": frozenset({"uploaded", "unclear", "failed", "pending"}),

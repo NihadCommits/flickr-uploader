@@ -27,6 +27,12 @@ HOME_ENV_VAR = "FLICKR_UPLOADER_HOME"
 MB = 1000 * 1000
 MAX_PHOTO_BYTES = 200 * MB
 MAX_VIDEO_BYTES = 1000 * MB
+# Flickr plays only this much of a video (Pro; Free: 3 minutes). Longer ones may be split.
+LONG_VIDEO_SECONDS = 10 * 60
+# What compressing aims at, and the most a piece of a split video may have:
+# below the limit, since the result is only known afterwards.
+VIDEO_COMPRESS_BYTES = 900 * MB
+VIDEO_PART_BYTES = 800 * MB
 # Wider images (extreme panoramas) are rejected by Flickr.
 MAX_PHOTO_ASPECT_RATIO = 31.25
 # Flickr API terms: at most 3600 calls per hour and API key.

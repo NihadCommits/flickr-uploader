@@ -10,6 +10,8 @@ def test_defaults_without_stored_values(conn):
         "download_target": None,
         "download_media": "all",
         "sync_albums_at_start": True,
+        "video_too_large": "ask",
+        "video_too_long": "keep",
         "flickr_account": None,
     }
 
@@ -24,6 +26,8 @@ def test_values_are_stored_at_once_and_replaced(conn):
         "download_target": r"E:\Downloads",
         "download_media": "photos",
         "sync_albums_at_start": False,
+        "video_too_large": "ask",
+        "video_too_long": "keep",
         "flickr_account": {"nsid": "12345@N00", "username": "someone"},
     }
     assert conn.execute("SELECT count(*) FROM settings").fetchone()[0] == 4
@@ -38,6 +42,8 @@ def test_values_are_stored_at_once_and_replaced(conn):
         ("sync_albums_at_start", 1),
         ("download_target", ""),
         ("download_target", 5),
+        ("video_too_large", "keep"),
+        ("video_too_long", "compress"),
         ("flickr_account", "12345@N00"),
         ("flickr_account", {"nsid": "", "username": "someone"}),
         ("flickr_account", {"nsid": "12345@N00"}),
