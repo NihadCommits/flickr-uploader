@@ -25,6 +25,7 @@ export function renderSettings(container, data, act) {
       "div",
       { class: "settings" },
       accountCard(account, formOpen, act),
+      videoCard(settings, act),
       downloadCard(settings, act),
       startCard(settings, act),
       infoCard(info, act),
@@ -120,6 +121,34 @@ function codeForm(act) {
     code,
     el("button", { class: "btn btn-primary", type: "submit" }, "Anmeldung abschließen"),
     el("button", { class: "btn btn-ghost", type: "button", onclick: act.reopenLoginPage }, "Seite nochmal öffnen"),
+  );
+}
+
+function videoCard(settings, act) {
+  const seg = (key, options, label) =>
+    el(
+      "div",
+      { class: "seg", role: "radiogroup", "aria-label": label },
+      options.map(([value, text]) =>
+        el(
+          "button",
+          { class: value === settings[key] ? "active" : "", role: "radio", "aria-checked": String(value === settings[key]), onclick: () => act.setSetting(key, value) },
+          text,
+        ),
+      ),
+    );
+  return card(
+    "Videos beim Hochladen",
+    row(
+      "Größer als 1 GB",
+      "So viel nimmt Flickr höchstens. Komprimieren rechnet das Video kleiner (H.264), Aufteilen schneidet es ohne Qualitätsverlust in Teile. Pro Video lässt sich das im Ordner ändern.",
+      seg("video_too_large", [["ask", "Jedes Mal fragen"], ["compress", "Komprimieren"], ["split", "Aufteilen"]], "Videos über 1 GB"),
+    ),
+    row(
+      "Länger als 10 Minuten",
+      "Flickr spielt nur die ersten 10 Minuten ab (ohne Pro: 3). Aufgeteilt ist alles zu sehen.",
+      seg("video_too_long", [["keep", "Ganz hochladen"], ["split", "Aufteilen"]], "Videos über 10 Minuten"),
+    ),
   );
 }
 

@@ -41,6 +41,9 @@ export function renderSteps(container, overview, status, plan, uploading = false
   if (overview.lights.yellow) {
     notes.push(note("warn", "warn", `${overview.lights.yellow} Album-Ordner brauchen eine Entscheidung: Auf Flickr gibt es ein Album mit sehr ähnlichem Titel. Wähle den Album-Ordner aus, um zu entscheiden.`));
   }
+  if (overview.open_videos) {
+    notes.push(note("warn", "warn", `${overview.open_videos} Video(s) in angehakten Ordnern sind größer als 1 GB. Wähle den Ordner aus und entscheide: komprimieren oder aufteilen (Vorgabe in den Einstellungen).`));
+  }
   if (overview.open_matches) {
     notes.push(note("warn", "warn", `${overview.open_matches} Datei(en) in angehakten Ordnern sind vielleicht schon auf Flickr. Wähle den Ordner aus, um zu entscheiden (sie werden bis dahin nicht hochgeladen).`));
   }

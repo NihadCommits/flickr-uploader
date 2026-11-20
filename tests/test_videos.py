@@ -231,3 +231,45 @@ def test_pausing_while_ffmpeg_works_loses_nothing(database, conn, holiday, flick
     assert [row[0] for row in states] == ["pending"]
     db.recover_interrupted(conn)
     assert upload(database, flickr, clock, work).uploaded == 1  # resumed
+
+
+# --- In the window ------------------------------------------------------------------
+
+
+def test_choosing_in_the_window(database, conn, holiday, flickr, clock, work):
+    from flickr_uploader.gui.api import Api
+
+    api = Api(database, client_factory=lambda **kwargs: flickr, background=lambda work: work())
+    folder_id = conn.execute(
+        "SELECT id FROM folders WHERE rel_path = '2026-06 Portugal'"
+    ).fetchone()[0]
+    listing = api.videos(folder_id)
+    (video,) = listing["videos"]
+    assert listing["open"] == 1
+    assert (video["name"], video["too_large"], video["choice"]) == ("MVI_0001.MP4", True, None)
+    assert video["allowed"] == ["compress", "split"]
+    assert api.upload_plan()["video"] == 1
+    assert api.overview()["open_videos"] == 1
+
+    assert api.choose_video(video["file_id"], "split") == {}
+    (video,) = api.videos(folder_id)["videos"]
+    assert (video["choice"], video["own_choice"], video["locked"]) == ("split", True, False)
+    plan = api.upload_plan()
+    assert (plan["video"], plan["ready"]) == (0, 1)
+
+    upload(database, flickr, clock, work)
+    (video,) = api.videos(folder_id)["videos"]
+    assert (video["locked"], video["parts"]) == (True, 3)
+    assert api.upload_plan()["done"] == 1
+    assert "schon auf Flickr" in api.choose_video(video["file_id"], "compress")["error"]
+
+
+def test_back_to_the_default(database, conn, holiday):
+    from flickr_uploader.gui.api import Api
+
+    api = Api(database, client_factory=lambda **kwargs: None)
+    file_id = video_file_id(conn)
+    api.choose_video(file_id, "compress")
+    assert api.choose_video(file_id, None) == {}
+    assert conn.execute("SELECT count(*) FROM video_plans").fetchone()[0] == 0
+    assert "passt nicht" in api.choose_video(file_id, "original")["error"]

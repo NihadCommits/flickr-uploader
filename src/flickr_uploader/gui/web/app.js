@@ -184,7 +184,10 @@ async function renderFolders() {
   const selected = data.folders.find((folder) => folder.id === view.selectedId);
   const context = {};
   if (selected && selected.album) context.flickrAlbums = ((await call("flickr_albums")) || { albums: [] }).albums;
-  if (selected && selected.included) context.matches = await call("matches", selected.id);
+  if (selected && selected.included) {
+    context.matches = await call("matches", selected.id);
+    context.videos = await call("videos", selected.id);
+  }
   renderDetails($("details"), selected, data.folders, context, actions);
   // A pre-check runs in the background: look again until it is done.
   if (data.folders.some((folder) => folder.precheck_running)) {
@@ -269,6 +272,10 @@ const actions = {
     });
     if (sure && (await call("rename_flickr_album", albumId, newTitle))) await afterChange("Album auf Flickr umbenannt");
     else await renderFolders();
+  },
+  async chooseVideo(fileId, choice) {
+    const done = { original: "Wird ganz hochgeladen", compress: "Wird komprimiert hochgeladen", split: "Wird in Teilen hochgeladen" };
+    if (await call("choose_video", fileId, choice)) await afterChange(choice ? done[choice] : "Vorgabe aus den Einstellungen gilt");
   },
   async confirmNew(albumId) {
     if (await call("confirm_new_album", albumId)) await afterChange("Es wird ein neues Album angelegt");

@@ -308,6 +308,7 @@ def test_only_public_methods_reach_the_page():
         "choose_download_target",
         "choose_same",
         "choose_upload",
+        "choose_video",
         "confirm_new_album",
         "decide_folder",
         "finish_login",
@@ -340,6 +341,7 @@ def test_only_public_methods_reach_the_page():
         "tree",
         "upload_plan",
         "use_existing_album",
+        "videos",
     }
 
 

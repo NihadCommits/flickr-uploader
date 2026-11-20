@@ -3,6 +3,7 @@
 // yellow light, or see which album the folder belongs to.
 
 import { decisionsSection } from "./decisions.js";
+import { videosSection } from "./videos.js";
 import { LIGHT_LABELS, count, dot, el, formatBytes, icon } from "./ui.js";
 
 export function renderDetails(container, folder, folders, context, act) {
@@ -22,6 +23,7 @@ export function renderDetails(container, folder, folders, context, act) {
     folder.album ? albumSection(folder, context, act) : folder.in_album ? memberSection(folder, folders, act) : assignSection(folder, act),
     folder.in_album ? uploadSection(folder) : null,
     folder.included ? decisionsSection(folder, context.matches, act) : null,
+    folder.included ? videosSection(context.videos, act) : null,
     contentSection(folder),
   ];
   container.replaceChildren(...sections.filter(Boolean));

@@ -32,6 +32,8 @@ from flickr_uploader import (
     scanner,
     settings,
     uploader,
+    videoplans,
+    videotools,
 )
 from flickr_uploader.flickr_client import FlickrClient, FlickrClientError, RateLimiter
 
@@ -401,6 +403,54 @@ class Api:
         self._open_url(f"https://www.flickr.com/photos/{user}/{photo_id}")
         return {}
 
+    # --- Videos too large or too long for Flickr --------------------------------------
+
+    def videos(self, folder_id: int) -> dict:
+        """The folder's videos that need (or allow) a choice: compress, split or whole."""
+        with self._database.connect() as conn:
+            rows = conn.execute(
+                "SELECT id, name, size_bytes, status, duration_seconds FROM files "
+                "WHERE folder_id = ? AND status != 'missing' ORDER BY name",
+                (folder_id,),
+            ).fetchall()
+            result = []
+            for row in rows:
+                allowed = videoplans.allowed(row)
+                if not allowed:
+                    continue
+                planned = conn.execute(
+                    "SELECT choice, parts FROM video_plans WHERE file_id = ?", (row["id"],)
+                ).fetchone()
+                result.append(
+                    {
+                        "file_id": row["id"],
+                        "name": row["name"],
+                        "size": row["size_bytes"],
+                        "duration": row["duration_seconds"],
+                        "too_large": videoplans.too_large(row),
+                        "allowed": list(allowed),
+                        "choice": videoplans.choice(conn, row),
+                        "own_choice": planned is not None,
+                        "parts": _expected_parts(row, planned),
+                        "locked": videoplans.started(conn, row["id"]),
+                    }
+                )
+        return {"videos": result, "open": sum(video["choice"] is None for video in result)}
+
+    def choose_video(self, file_id: int, choice: str | None) -> dict:
+        """Compress, split or upload whole (None: the default from the settings)."""
+        try:
+            with self._database.connect() as conn:
+                videoplans.decide(conn, int(file_id), choice or None)
+        except videoplans.VideoPlanError:
+            return {
+                "error": "Das geht nicht mehr: Teile dieses Videos sind schon auf Flickr, "
+                "oder die Wahl passt nicht zu diesem Video."
+            }
+        except db.RecordNotFoundError:
+            return {"error": "Diese Datei gibt es nicht mehr. Bitte neu scannen."}
+        return {}
+
     # --- Upload ------------------------------------------------------------------------
 
     def upload_plan(self) -> dict:
@@ -415,15 +465,33 @@ class Api:
                 )
             }
             rows = conn.execute(
-                "SELECT f.status, p.state AS photo, d.root_id, d.rel_path, "
-                "d.prechecked_at IS NOT NULL AS checked, EXISTS (SELECT 1 FROM precheck_matches m "
-                "WHERE m.file_id = f.id AND m.decision = 'open') AS open "
+                "SELECT f.id, f.name, f.status, f.duration_seconds, p.state AS photo, d.root_id, "
+                "d.rel_path, d.prechecked_at IS NOT NULL AS checked, "
+                "EXISTS (SELECT 1 FROM precheck_matches m "
+                "WHERE m.file_id = f.id AND m.decision = 'open') AS open, "
+                "(SELECT count(*) FROM video_parts v WHERE v.file_id = f.id) AS parts, "
+                "(SELECT count(*) FROM video_parts v JOIN photos q ON q.hash = v.photo_hash "
+                " WHERE v.file_id = f.id AND q.state = 'verified') AS parts_done "
                 "FROM files f JOIN folders d ON d.id = f.folder_id "
                 "LEFT JOIN photos p ON p.hash = f.hash "
                 "WHERE d.included = 1 AND d.missing = 0 AND f.status != 'missing'"
             ).fetchall()
+            video_choice = {
+                row["id"]: videoplans.choice(conn, row) for row in rows if videoplans.too_large(row)
+            }
         plan = dict.fromkeys(
-            ("files", "ready", "done", "skipped", "failed", "decide", "album", "unchecked"), 0
+            (
+                "files",
+                "ready",
+                "done",
+                "skipped",
+                "failed",
+                "decide",
+                "album",
+                "unchecked",
+                "video",
+            ),
+            0,
         )
         for row in rows:
             plan["files"] += 1
@@ -431,8 +499,12 @@ class Api:
                 row["rel_path"],
                 {path: album for (root, path), album in album_of.items() if root == row["root_id"]},
             )
-            if row["status"].startswith("skipped_"):
+            if row["id"] in video_choice and video_choice[row["id"]] is None:
+                plan["video"] += 1  # too large: waits for compress or split
+            elif row["status"].startswith("skipped_") and row["id"] not in video_choice:
                 plan["skipped"] += 1
+            elif row["parts"] and row["parts"] == row["parts_done"]:
+                plan["done"] += 1
             elif row["photo"] == "verified":
                 plan["done"] += 1
             elif row["photo"] == "failed":
@@ -782,6 +854,7 @@ class Api:
                     "SELECT count(DISTINCT file_id) FROM precheck_matches WHERE decision = 'open'"
                 ),
                 "lights": _light_counts(conn),
+                "open_videos": self.upload_plan()["video"],
                 "flickr_albums": value("SELECT count(*) FROM albums WHERE state = 'exists'"),
                 "albums_synced_at": value("SELECT max(last_synced) FROM albums"),
             }
@@ -879,6 +952,9 @@ class Api:
 
         def work() -> None:
             try:
+                with self._database.connect() as conn:
+                    # Lengths first: they decide which videos may be split.
+                    videoplans.read_durations(conn, folder_id)
                 client = self._flickr()
                 with self._database.connect() as conn:
                     precheck.precheck_folder(conn, client, folder_id)
@@ -1009,6 +1085,20 @@ def _has_flickr_data(conn: sqlite3.Connection) -> bool:
             "OR EXISTS (SELECT 1 FROM photos WHERE flickr_id IS NOT NULL) "
             "OR EXISTS (SELECT 1 FROM precheck_matches)"
         ).fetchone()[0]
+    )
+
+
+def _expected_parts(file: sqlite3.Row, planned: sqlite3.Row | None) -> int | None:
+    """How many pieces splitting gives (planned, or estimated from size and length)."""
+    if planned is not None and planned["parts"]:
+        return planned["parts"]
+    if file["duration_seconds"] is None:
+        return None
+    return videotools.split_count(
+        file["size_bytes"],
+        file["duration_seconds"],
+        config.VIDEO_PART_BYTES,
+        config.LONG_VIDEO_SECONDS,
     )
 
 

@@ -75,10 +75,11 @@ function idle(plan, run, job, act) {
       : "Noch keine Ordner angehakt";
   const details = [];
   if (plan.decide) details.push(`${plan.decide} warten auf deine Entscheidung`);
+  if (plan.video) details.push(`${plan.video} zu große Videos warten auf „Komprimieren“ oder „Aufteilen“`);
   if (plan.album) details.push(`${plan.album} in Alben, die eine Entscheidung brauchen`);
   if (plan.done) details.push(`${plan.done} schon auf Flickr`);
   if (plan.failed) details.push(`${plan.failed} mit Fehler`);
-  if (plan.skipped) details.push(`${plan.skipped} übersprungen (RAW, zu groß, nicht unterstützt)`);
+  if (plan.skipped) details.push(`${plan.skipped} übersprungen (RAW, zu große Fotos, nicht unterstützt)`);
   if (plan.unchecked) details.push(`${plan.unchecked} werden vorher noch abgeglichen`);
   return [
     el(
