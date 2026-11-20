@@ -19,6 +19,7 @@ und mit dem Aufnahmedatum in den Dateien (siehe "Download").
 ## Nicht-Ziele in Phase 1 (bewusst verschoben)
 - Video-Kompression / Ziel-Bitrate-Berechnung → Phase 2
 - Fuzzy-Matching-Warnsystem für ähnliche (nicht gleiche) Albennamen → Phase 2
+  (umgesetzt, siehe Album-Abgleich)
 - Dry-Run-Modus, Video-Splitting → Phase 3
 - EXIF in heruntergeladene Fotos schreiben, für die Flickr kein Original
   anbietet → Phase 2, falls nötig (bräuchte eine neue Abhängigkeit)
@@ -134,8 +135,16 @@ zusammengefasst, Groß-/Kleinschreibung ignoriert):
 | Ampel | Bedeutung | Verhalten |
 |---|---|---|
 | grün | genau ein Album mit exakt gleichem Titel | wird verwendet |
-| gelb | Treffer nur nach Normalisierung, oder mehrere Alben mit gleichem Titel | Nutzer muss wählen (vorhandenes Album oder Titel ändern), bis dahin kein Upload für diesen Ordner |
+| gelb | Treffer nur nach Normalisierung, mehrere Alben mit gleichem Titel, oder ein ähnlicher Titel (seit Phase 2, siehe unten) | Nutzer muss wählen (vorhandenes Album oder Titel ändern), bis dahin kein Upload für diesen Ordner |
 | blau | kein Treffer | neues Album wird angelegt |
+
+**Ähnliche Titel** (Phase 2, `albums.similar_titles`): Beide Titel werden
+zusätzlich "gefaltet" (Umlaute ausgeschrieben, Akzente und Trennzeichen weg),
+die Zahlen darin müssen exakt gleich sein, und der Rest muss zu mindestens 85 %
+übereinstimmen (`difflib`). So fallen Tippfehler ("Kroatein"), Schreibweisen
+("Muenchen") und andere Trenner ("2024_08") auf, "2024-06 Portugal" und
+"2024-07 Portugal" bleiben aber zwei Alben. Ein ähnlicher Titel macht die
+Ampel gelb, mit denselben Auswegen wie oben.
 
 Die Albenliste lässt sich als Text prüfen: heute per `scripts/export_albums.py`
 (CSV), im Tool über die Sidebar plus Export-Funktion.

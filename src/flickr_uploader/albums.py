@@ -9,8 +9,10 @@ Planned albums are compared with all others by normalized title (Unicode NFC,
 whitespace collapsed, case ignored):
 
 - green:  exactly one Flickr album with exactly this title; it is used
-- yellow: a match only after normalizing, or several albums with this title;
-          the user decides, until then nothing is uploaded into the album
+- yellow: a match only after normalizing, several albums with this title, or
+          a similar title (typo, umlaut spelling, other separators; the
+          numbers must be the same); the user decides, until then nothing
+          is uploaded into the album
 - blue:   no match, or the user confirmed a new album; created on upload
 
 Creating an album is serialized by one lock, and the intent (state
@@ -19,7 +21,9 @@ answer, the album stays 'creating' until a sync finds it by title and cover,
 or finds that it was not created. Nothing is created twice blindly.
 """
 
+import difflib
 import os
+import re
 import sqlite3
 import threading
 import unicodedata
@@ -60,6 +64,30 @@ class SyncReport:
 
 def normalize_title(title: str) -> str:
     return " ".join(unicodedata.normalize("NFC", title).split()).casefold()
+
+
+# Similar, not equal: at least this close after folding (difflib ratio).
+SIMILARITY = 0.85
+_UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+
+
+def _fold(title: str) -> str:
+    """Lower case, umlauts spelled out, accents and separators dropped."""
+    text = normalize_title(title).translate(_UMLAUTS)
+    text = "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+    return " ".join(re.sub(r"[^0-9a-z]+", " ", text).split())
+
+
+def similar_titles(first: str, second: str) -> bool:
+    """Probably meant to be the same album, e.g. "2024-08 Alpen" and "2024_08 Alpn".
+
+    Numbers (dates, years) must match exactly: "2024-06 Portugal" and
+    "2024-07 Portugal" are two albums.
+    """
+    a, b = _fold(first), _fold(second)
+    if re.findall(r"\d+", a) != re.findall(r"\d+", b):
+        return False
+    return a == b or difflib.SequenceMatcher(None, a, b).ratio() >= SIMILARITY
 
 
 # --- Album folders and the user's decisions -------------------------------------
@@ -228,14 +256,18 @@ def lights(conn: sqlite3.Connection) -> dict[int, str]:
         elif row["state"] == "creating" or row["title_confirmed"]:
             result[row["id"]] = BLUE
         else:
-            result[row["id"]] = _planned_light(row, by_title[normalize_title(row["title"])])
+            result[row["id"]] = _planned_light(row, by_title[normalize_title(row["title"])], rows)
     return result
 
 
-def _planned_light(album: sqlite3.Row, same_title: list[sqlite3.Row]) -> str:
+def _planned_light(album: sqlite3.Row, same_title: list[sqlite3.Row], everyone) -> str:
     others = [other for other in same_title if other["id"] != album["id"]]
     if not others:
-        return BLUE
+        similar = any(
+            other["id"] != album["id"] and similar_titles(other["title"], album["title"])
+            for other in everyone
+        )
+        return YELLOW if similar else BLUE
     (only, *more) = others
     if not more and only["title"] == album["title"] and only["state"] == "exists":
         return GREEN

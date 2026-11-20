@@ -154,6 +154,10 @@ def test_retitle_only_planned_albums(conn, tree, flickr):
         (["2026-06 Portugal", "2026-06 Portugal"], albums.YELLOW),  # which one?
         (["2026-06 Portugal", "2026-06 portugal"], albums.YELLOW),
         (["2026-07 Wandern"], albums.BLUE),
+        (["2026-06 Portgual"], albums.YELLOW),  # typo
+        (["2026_06 Portugal"], albums.YELLOW),  # other separator
+        (["2026-07 Portugal"], albums.BLUE),  # another month: another album
+        (["2026-06 Lissabon"], albums.BLUE),
     ],
 )
 def test_lights(conn, tree, flickr, on_flickr, light):
@@ -182,6 +186,25 @@ def test_confirming_turns_yellow_into_blue(conn, tree, flickr):
     # A new title is a new question.
     albums.retitle_planned(conn, album_id, "2026-06  PORTUGAL")
     assert albums.lights(conn)[album_id] == albums.YELLOW
+
+
+@pytest.mark.parametrize(
+    "first, second, similar",
+    [
+        ("2024-08 Alpen", "2024-08 Alpen", True),
+        ("2024-08 Alpen", "2024 08 alpen", True),
+        ("München 2023", "Muenchen 2023", True),
+        ("Café Paris", "Cafe Paris", True),
+        ("Kroatien", "Kroatein", True),
+        ("2024-06 Portugal", "2024-07 Portugal", False),
+        ("Urlaub 2019", "Urlaub 2020", False),
+        ("Familie", "Garten", False),
+        ("Rom", "Rot", False),
+    ],
+)
+def test_similar_titles(first, second, similar):
+    assert albums.similar_titles(first, second) is similar
+    assert albums.similar_titles(second, first) is similar
 
 
 def test_two_planned_albums_with_similar_titles_are_yellow(conn, tree):
