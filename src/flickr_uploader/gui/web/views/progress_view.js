@@ -94,6 +94,7 @@ function idle(plan, run, job, act) {
         otherRunning ? el("div", { class: "muted small", text: "Gerade läuft ein Download. Hochladen geht, sobald er fertig ist." }) : null,
         job.report && run ? el("div", { class: "small report", text: reportText(job.report) }) : run ? el("div", { class: "muted small", text: runText(run) }) : null,
       ),
+      el("button", { class: "btn", disabled: !plan.files, onclick: act.dryRun }, "Probelauf"),
       el(
         "button",
         { class: "btn btn-primary", disabled: !plan.ready || otherRunning, onclick: act.startUpload },

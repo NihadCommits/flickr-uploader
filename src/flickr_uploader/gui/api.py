@@ -27,6 +27,7 @@ from flickr_uploader import (
     config,
     db,
     downloader,
+    dryrun,
     jobs,
     precheck,
     scanner,
@@ -517,6 +518,11 @@ class Api:
                 plan["ready"] += 1
                 plan["unchecked"] += not row["checked"]
         return plan
+
+    def dry_run(self) -> dict:
+        """What an upload run would do now, per album and file; changes nothing."""
+        with self._database.connect() as conn:
+            return dataclasses.asdict(dryrun.dry_run(conn))
 
     def start_upload(self) -> dict:
         """Start (or resume) the upload of everything ticked, in the background."""

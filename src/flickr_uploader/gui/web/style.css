@@ -835,3 +835,32 @@ body.busy, body.busy * { cursor: progress !important; }
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
+
+/* --- Dry run ---------------------------------------------------------------- */
+
+.dialog.wide {
+  width: min(860px, calc(100vw - 40px));
+  max-height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dialog.wide p { margin: 0; }
+
+.dryrun-list { overflow: auto; min-height: 0; display: grid; gap: 8px; }
+
+.dryrun-group { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; }
+
+.dryrun-group summary { cursor: pointer; }
+
+.dryrun-files { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; font-size: 13px; }
+
+.dryrun-files li { display: flex; gap: 12px; }
+
+.dryrun-name { min-width: 220px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.dryrun-go { color: var(--blue); }
+.dryrun-ok { color: var(--green); }
+.dryrun-wait { color: var(--amber); }
+.dryrun-skip { color: var(--text-3); }

@@ -311,6 +311,7 @@ def test_only_public_methods_reach_the_page():
         "choose_video",
         "confirm_new_album",
         "decide_folder",
+        "dry_run",
         "finish_login",
         "flickr_albums",
         "info",

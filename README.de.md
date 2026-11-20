@@ -28,8 +28,16 @@ den PC herunterlädt.
   Dateien kommen als Original, wo Flickr es hat, mit eingetragenem
   Aufnahmedatum, jedes Album in einem eigenen Ordner.
 
-RAW-Dateien und zu große Videos werden übersprungen und im Protokoll
-aufgeführt; die App konvertiert und komprimiert nichts.
+- **Große und lange Videos.** Videos über Flickrs Grenze von 1 GB gehen
+  komprimiert oder in Teile aufgeteilt hoch, wie du es pro Video wählst
+  (oder als Vorgabe in den Einstellungen). Videos über 10 Minuten, die Flickr
+  nur teilweise abspielt, lassen sich ebenfalls aufteilen. Dein Original
+  bleibt unverändert.
+- **Probelauf.** Zeigt Datei für Datei, was ein Upload täte, ohne etwas zu
+  senden.
+
+RAW-Dateien werden übersprungen und im Protokoll aufgeführt; die App
+konvertiert sie nie.
 
 ## Voraussetzungen
 
@@ -66,8 +74,9 @@ Datei. (Im Terminal geht das genauso:
    deine Entscheidung braucht (gelb, z. B. bei einem sehr ähnlichen Titel).
 4. Bei Dateien, die vielleicht schon auf Flickr sind, *Ist dasselbe Foto* oder
    *Trotzdem hochladen* wählen.
-5. *Hochladen starten*. *Pausieren* hält nach der aktuellen Datei an,
-   *Fortsetzen* macht dort weiter.
+5. Bei Videos über 1 GB *Komprimieren* oder *Aufteilen* wählen.
+6. Mit *Probelauf* prüfen, dann *Hochladen starten*. *Pausieren* hält nach
+   der aktuellen Datei an, *Fortsetzen* macht dort weiter.
 
 **Alben**: deine Album-Ordner und deine Alben auf Flickr; ein Ordner kann ein
 vorhandenes Album verwenden, das dort anders heißt.
@@ -75,8 +84,9 @@ vorhandenes Album verwenden, das dort anders heißt.
 **Herunterladen**: Alben anhaken, pro Album *Alles*, *Fotos* oder *Videos*
 wählen, einen Zielordner außerhalb deiner Foto-Ordner wählen und starten.
 
-**Einstellungen**: Flickr-Zugang, Vorauswahl und Zielordner fürs
-Herunterladen, Albenliste beim Start, Speicherort von Datenbank und Backups.
+**Einstellungen**: Flickr-Zugang, was mit großen und langen Videos passiert,
+Vorauswahl und Zielordner fürs Herunterladen, Albenliste beim Start,
+Speicherort von Datenbank und Backups.
 
 Datenbank und Backups liegen unter `%LOCALAPPDATA%\flickr-uploader`. Eine
 Datenbank gehört zu genau einem Flickr-Konto; für ein zweites Konto vor dem

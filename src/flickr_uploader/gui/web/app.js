@@ -7,6 +7,7 @@ import { renderDetails } from "./views/album_assignment.js";
 import { renderAlbums } from "./views/album_overview.js";
 import { renderDownloadAlbums, renderDownloadCard } from "./views/download_view.js";
 import { renderTree } from "./views/folder_browser.js";
+import { renderDryRun } from "./views/dryrun_view.js";
 import { renderUpload } from "./views/progress_view.js";
 import { renderSettings } from "./views/settings_view.js";
 import { renderSteps } from "./views/steps.js";
@@ -134,7 +135,7 @@ async function renderJob(plan) {
   const kind = job.run ? job.run.kind : null;
   const card = $("upload-card");
   card.hidden = !lastPlan.files && !(job.running && kind === "upload") && kind !== "upload";
-  renderUpload(card, lastPlan, job, view, { startUpload, pauseJob });
+  renderUpload(card, lastPlan, job, view, { startUpload, pauseJob, dryRun });
   if (prefs) renderDownloadCard($("download-card"), job, downloadFlickr.albums, prefs, view, downloadActions);
   if (job.running) {
     wasRunning = true;
@@ -311,6 +312,14 @@ async function startUpload() {
     showToast("Upload gestartet");
     await renderOverview();
   }
+}
+
+async function dryRun() {
+  const result = await busy("Probelauf …", () => call("dry_run"));
+  if (!result) return;
+  const close = () => ($("dryrun").hidden = true);
+  renderDryRun($("dryrun"), result, close);
+  $("dryrun").hidden = false;
 }
 
 async function pauseJob() {

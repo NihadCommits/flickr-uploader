@@ -27,8 +27,14 @@ to your PC.
   Files come as originals where Flickr has them, with the recording date
   written into them, each album in its own folder.
 
-RAW files and oversized videos are skipped and listed in the log; the app
-neither converts nor compresses.
+- **Large and long videos.** Videos over Flickr's 1 GB limit go up
+  compressed or split into parts, your choice per video (or a default in
+  the settings). Videos over 10 minutes, which Flickr only partly plays,
+  can be split too. Your original stays untouched.
+- **Dry run.** *Probelauf* shows what an upload would do, file by file,
+  without sending anything.
+
+RAW files are skipped and listed in the log; the app never converts them.
 
 ## Requirements
 
@@ -65,8 +71,9 @@ The interface is in German.
    decision (yellow, e.g. a very similar title).
 4. For files that may already be on Flickr, choose *Ist dasselbe Foto* or
    *Trotzdem hochladen*.
-5. *Hochladen starten*. *Pausieren* stops after the current file,
-   *Fortsetzen* carries on.
+5. For videos over 1 GB choose *Komprimieren* or *Aufteilen*.
+6. *Probelauf* to check, then *Hochladen starten*. *Pausieren* stops after
+   the current file, *Fortsetzen* carries on.
 
 **Alben**: your album folders and your albums on Flickr; a folder can use an
 existing album with a different name.
@@ -74,8 +81,9 @@ existing album with a different name.
 **Herunterladen**: tick albums, choose *Alles*, *Fotos* or *Videos* for each,
 pick a target folder outside your photo folders and start.
 
-**Einstellungen**: Flickr login, default download filter and folder, album
-list at start, database location and backups.
+**Einstellungen**: Flickr login, what happens to large and long videos,
+default download filter and folder, album list at start, database location
+and backups.
 
 The database and its backups live in `%LOCALAPPDATA%\flickr-uploader`. One
 database belongs to one Flickr account; for a second account, set

@@ -21,7 +21,7 @@ und mit dem Aufnahmedatum in den Dateien (siehe "Download").
   "Zu große und lange Videos")
 - Fuzzy-Matching-Warnsystem für ähnliche (nicht gleiche) Albennamen → Phase 2
   (umgesetzt, siehe Album-Abgleich)
-- Dry-Run-Modus → Phase 3
+- Dry-Run-Modus → Phase 3 (umgesetzt als "Probelauf", siehe GUI)
 - Video-Splitting → Phase 3, vorgezogen in Phase 2 (siehe "Zu große und lange
   Videos")
 - EXIF in heruntergeladene Fotos schreiben, für die Flickr kein Original
@@ -257,6 +257,9 @@ flickr-uploader/
 │       ├── albums.py                # Album-Ordner, Ampel, Abgleich, Albumanlage
 │       ├── uploader.py              # Upload-Lauf: Zustandsautomaten, Recovery
 │       ├── downloader.py            # Alben herunterladen (Filter je Album)
+│       ├── videotools.py            # ffmpeg: Länge lesen, komprimieren, schneiden
+│       ├── videoplans.py            # zu große/lange Videos: Wahl, Teile, Prüfwerte
+│       ├── dryrun.py                # Probelauf: was ein Upload jetzt täte
 │       ├── filedates.py             # Aufnahmedatum in geladene Dateien schreiben
 │       ├── jobs.py                  # ein Auftrag zur Zeit, Lauf + Fortschritt in der DB
 │       ├── settings.py              # Einstellungen in der DB: Schlüssel, Vorgaben, Prüfung
@@ -275,6 +278,8 @@ flickr-uploader/
 │               │   ├── steps.js             # Schrittleiste: was als Nächstes dran ist
 │               │   ├── download_view.js     # Alben herunterladen (Filter, Ziel)
 │               │   ├── decisions.js         # "Ist dasselbe Foto" / "Trotzdem hochladen"
+│               │   ├── videos.js            # Wahl pro Video: komprimieren, aufteilen, ganz
+│               │   ├── dryrun_view.js       # Fenster "Probelauf"
 │               │   ├── settings_view.js     # Reiter "Einstellungen"
 │               │   └── progress_view.js     # Upload-Karte: Plan, Fortschritt, Pause, Protokoll
 │               └── vendor/          # fremde Dateien mit Lizenz (derzeit keine)
@@ -1092,6 +1097,17 @@ dessen gemischte Fehlersignale in vier klare Fälle:
   mit dem anderen Konto in der GUI wird abgelehnt (die alte bleibt). Ist die DB
   noch leer, wechselt sie einfach zum neuen Konto. Für ein zweites Konto ein
   eigenes Profil verwenden (`FLICKR_UPLOADER_HOME`).
+- **Probelauf** (Phase 3, `dryrun.py`, Knopf in der Upload-Karte): zeigt pro
+  Album und Datei, was "Hochladen starten" jetzt täte (hochladen, komprimiert
+  oder in Teilen, übernehmen, schon oben, wartet worauf, übersprungen), dazu
+  die Zahl der Uploads und neuen Alben. Liest nur die DB: kein Hashen, kein
+  Flickr-Aufruf, keine Änderung. Neue Inhalte sind noch nicht gehasht; ein
+  "wird hochgeladen" kann sich im Lauf also noch als "schon oben" (gleiches
+  Foto in anderem Ordner) herausstellen.
+- **Stand am 2026-11-20, Version 2.0.0:** Phase 1 (V1) plus Phase 2 (ähnliche
+  Albentitel, Aufnahmedatum in Fotos ohne Original, zu große und lange Videos
+  komprimieren oder aufteilen) und Phase 3 (Probelauf; Video-Splitting kam
+  schon mit Phase 2). Alle Punkte der ursprünglichen Idee sind umgesetzt.
 - **Stand am 2026-10-13, alle 4 Schritte fertig:** Schritt 2 brachte
   Entscheidungen, Upload starten/pausieren/fortsetzen, Fortschritt und
   Protokoll, Schritt 3 den Reiter "Herunterladen", Schritt 4 den Reiter
