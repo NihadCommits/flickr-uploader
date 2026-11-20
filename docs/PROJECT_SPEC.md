@@ -595,7 +595,8 @@ Läufe, die noch auf `running` stehen, als `crashed` markiert.
 ## Ablauf (High-Level)
 
 0. **Programmstart / Recovery:** DB öffnen (Lock, Integritätsprüfung,
-   Migration), DB-Backup anlegen. `photos` in `uploading` → `unclear`. `runs` in
+   Migration; vor einer Migration ein DB-Backup, sonst zu Beginn jedes
+   Uploads). `photos` in `uploading` → `unclear`. `runs` in
    `running` → `crashed`. Alben in `creating` abgleichen (siehe oben), offene
    Umbenennungen (`pending_title`) erneut anwenden.
 1. Nutzer öffnet Root-Ordner (z. B. "Bilder") → `scanner.py` baut den Baum mit
