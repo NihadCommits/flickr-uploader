@@ -17,7 +17,8 @@ whitespace collapsed, case ignored):
 
 A per-file folder ("Einzel-Ordner") is the one exception to "one folder,
 one album": the user gives each of its files an album of its own
-(file_albums); files without one are not uploaded.
+(file_albums); files without one are not uploaded. Any file may also go
+into further albums (file_extra_albums): uploaded once, added to each.
 
 Creating an album is serialized by one lock, and the intent (state
 'creating' plus the cover photo) is committed first. If Flickr gives no
@@ -316,11 +317,61 @@ def album_of_file(conn: sqlite3.Connection, file_id: int, folder_id: int) -> int
     return folder["album_id"] if folder else None
 
 
+# --- Extra albums -----------------------------------------------------------------
+
+
+def add_extra(conn: sqlite3.Connection, file_ids: list[int], album_id: int) -> int:
+    """Put files into one more album as well (uploaded once); returns how many are new."""
+    if conn.execute("SELECT 1 FROM albums WHERE id = ?", (album_id,)).fetchone() is None:
+        raise db.RecordNotFoundError(f"album {album_id} does not exist")
+    added = 0
+    with db.transaction(conn):
+        for file_id in file_ids:
+            if conn.execute("SELECT 1 FROM files WHERE id = ?", (file_id,)).fetchone() is None:
+                raise db.RecordNotFoundError(f"file {file_id} does not exist")
+            if album_id in own_albums(conn, file_id):
+                continue  # its own album already
+            added += conn.execute(
+                "INSERT OR IGNORE INTO file_extra_albums (file_id, album_id) VALUES (?, ?)",
+                (file_id, album_id),
+            ).rowcount
+    return added
+
+
+def remove_extra(conn: sqlite3.Connection, file_ids: list[int], album_id: int) -> int:
+    """Take an extra album away again; a photo already in it stays there on Flickr."""
+    with db.transaction(conn):
+        removed = sum(
+            conn.execute(
+                "DELETE FROM file_extra_albums WHERE file_id = ? AND album_id = ?",
+                (file_id, album_id),
+            ).rowcount
+            for file_id in file_ids
+        )
+        _drop_if_unused(conn, album_id)
+    return removed
+
+
+def extra_albums(conn: sqlite3.Connection, file_id: int) -> list[int]:
+    return [
+        row[0]
+        for row in conn.execute(
+            "SELECT album_id FROM file_extra_albums WHERE file_id = ? ORDER BY album_id",
+            (file_id,),
+        )
+    ]
+
+
+def own_albums(conn: sqlite3.Connection, file_id: int) -> set[int]:
+    folder_id = conn.execute("SELECT folder_id FROM files WHERE id = ?", (file_id,)).fetchone()[0]
+    own = album_of_file(conn, file_id, folder_id)
+    return {own} if own is not None else set()
+
+
 def _in_use(conn: sqlite3.Connection, album_id: int) -> bool:
-    return (
-        conn.execute("SELECT 1 FROM folders WHERE album_id = ?", (album_id,)).fetchone() is not None
-        or conn.execute("SELECT 1 FROM file_albums WHERE album_id = ?", (album_id,)).fetchone()
-        is not None
+    return any(
+        conn.execute(f"SELECT 1 FROM {table} WHERE album_id = ?", (album_id,)).fetchone()  # noqa: S608
+        for table in ("folders", "file_albums", "file_extra_albums")
     )
 
 
@@ -645,6 +696,12 @@ def _merge_green(conn: sqlite3.Connection) -> int:
             conn.execute(
                 "UPDATE file_albums SET album_id = ? WHERE album_id = ?", (target, album["id"])
             )
+            conn.execute(
+                "INSERT OR IGNORE INTO file_extra_albums (file_id, album_id) "
+                "SELECT file_id, ? FROM file_extra_albums WHERE album_id = ?",
+                (target, album["id"]),
+            )
+            conn.execute("DELETE FROM file_extra_albums WHERE album_id = ?", (album["id"],))
             conn.execute(
                 "INSERT OR IGNORE INTO album_photos (album_id, photo_hash, state, updated_at) "
                 "SELECT ?, photo_hash, 'pending', ? FROM album_photos WHERE album_id = ?",

@@ -17,6 +17,9 @@ den PC herunterlädt.
 - **Ein Ordner, mehrere Alben.** Ein Ordner wie der Kamera-Export einer ganzen
   Reise verteilt seine Fotos auf mehrere vorhandene oder neue Alben: nach
   Aufnahmetag gruppiert, mit Vorschaubildern, einzeln oder tageweise.
+- **Ein Foto, mehrere Alben.** Ausgewählte Fotos zusätzlich in weitere Alben
+  legen, z. B. zehn einer Reise für einen Post, vor oder nach dem Upload.
+  Jedes Foto wird trotzdem nur einmal hochgeladen.
 - **Keine Duplikate.** Jeder Upload trägt einen Tag mit einem Prüfwert des
   Dateiinhalts. Angehakte Ordner werden vorher mit den Fotos abgeglichen, die
   schon auf Flickr liegen; mögliche Treffer warten auf deine Entscheidung.
@@ -71,7 +74,8 @@ Datei. (Im Terminal geht das genauso:
 
 1. *Ordner öffnen …*: den Ordner mit deinen Fotos wählen.
 2. Im Baum einen Ordner anklicken und *Als Album festlegen* wählen, oder
-   *Fotos einzeln auf Alben verteilen* und dann *Fotos zuordnen …*.
+   *Fotos einzeln auf Alben verteilen* und dann *Fotos zuordnen …*. Über
+   *Fotos ansehen …* kommen einzelne Fotos zusätzlich in weitere Alben.
 3. Die Unterordner anhaken, die hochgeladen werden sollen. Eine Ampel zeigt,
    ob das Album schon auf Flickr ist (grün), neu angelegt wird (blau) oder
    deine Entscheidung braucht (gelb, z. B. bei einem sehr ähnlichen Titel).

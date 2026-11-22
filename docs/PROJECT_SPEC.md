@@ -89,6 +89,17 @@ eigene, spätere Entscheidung des Nutzers auf Flickr, unabhängig von diesem Too
   Probelauf und Duplikatschutz gelten unverändert, nur das Album kommt pro
   Datei statt pro Ordner. Vorschaubilder entstehen beim Ansehen im Speicher
   (Pillow, 160 px), nie im Foto-Ordner.
+- **Zusatzalben** (gewünscht am 2026-11-22): Jede Datei eines angehakten
+  Ordners kann zusätzlich zu ihrem eigenen Album in weitere Alben, z. B. zehn
+  Porto-Fotos auch ins Album "Instagram" (`file_extra_albums`). Hochgeladen
+  wird trotzdem nur einmal; Flickr führt dasselbe Foto in mehreren Alben. Das
+  geht vorher (das Foto kommt beim Upload in alle seine Alben) und nachher
+  (ein schon hochgeladenes Foto wird beim nächsten Lauf nur noch ins
+  Zusatzalbum gelegt, ohne neuen Upload). Festgelegt im Fenster "Fotos
+  ansehen" ("Zusätzlich in Album …"). Wird ein Zusatzalbum wieder entfernt,
+  bleibt ein schon hinzugefügtes Foto auf Flickr darin: Das Tool nimmt nie
+  etwas aus Alben heraus. Ein gelbes Zusatzalbum wird bis zur Entscheidung
+  übersprungen, das eigene Album nicht davon aufgehalten.
 - **Erledigt-Markierung:** Die UI leitet den Status jedes Ordners aus der DB ab
   und zeigt ihn im Baum an (vollständig / teilweise / Fehler). Es werden
   **keine Marker-Dateien** in die Foto-Ordner geschrieben (Prinzip 6). Solche
@@ -587,6 +598,19 @@ BEGIN
                OR substr(f.rel_path, 1, length(NEW.rel_path) + 1) = NEW.rel_path || '/')
     );
 END;
+```
+
+Migration v5 (2026-11-22, siehe "Zusatzalben"):
+
+```sql
+-- Weitere Alben einer Datei neben ihrem eigenen, z. B. eine Auswahl für einen Post.
+-- Hochgeladen wird einmal; Flickr führt ein Foto in mehreren Alben.
+CREATE TABLE file_extra_albums (
+    file_id   INTEGER NOT NULL REFERENCES files(id),
+    album_id  INTEGER NOT NULL REFERENCES albums(id),
+    PRIMARY KEY (file_id, album_id)
+) STRICT;
+CREATE INDEX idx_file_extra_albums_album ON file_extra_albums(album_id);
 ```
 
 ## Zustandsautomaten

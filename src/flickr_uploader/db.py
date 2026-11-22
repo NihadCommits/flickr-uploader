@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 MIN_SQLITE_VERSION = (3, 37, 0)  # first version with STRICT tables
 BUSY_TIMEOUT_SECONDS = 5.0
 DEFAULT_KEEP_BACKUPS = 10
@@ -259,8 +259,25 @@ BEGIN
 END;
 """
 
+_SCHEMA_V5 = """
+-- Further albums a file goes into besides its own, e.g. a selection for a post.
+-- The photo is uploaded once; Flickr keeps one photo in several albums.
+CREATE TABLE file_extra_albums (
+    file_id   INTEGER NOT NULL REFERENCES files(id),
+    album_id  INTEGER NOT NULL REFERENCES albums(id),
+    PRIMARY KEY (file_id, album_id)
+) STRICT;
+CREATE INDEX idx_file_extra_albums_album ON file_extra_albums(album_id);
+"""
+
 # Schema version -> SQL that upgrades from the previous version.
-_MIGRATIONS: dict[int, str] = {1: _SCHEMA_V1, 2: _SCHEMA_V2, 3: _SCHEMA_V3, 4: _SCHEMA_V4}
+_MIGRATIONS: dict[int, str] = {
+    1: _SCHEMA_V1,
+    2: _SCHEMA_V2,
+    3: _SCHEMA_V3,
+    4: _SCHEMA_V4,
+    5: _SCHEMA_V5,
+}
 
 
 class DatabaseError(Exception):

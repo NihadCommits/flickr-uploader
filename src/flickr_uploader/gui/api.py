@@ -436,17 +436,25 @@ class Api:
         return {}
 
     def folder_files(self, folder_id: int) -> dict:
-        """The files of a per-file folder with capture time and album, for "Fotos zuordnen"."""
+        """The files of a ticked folder with capture time and albums, for "Fotos ansehen"."""
         with self._database.connect() as conn:
             folder = conn.execute(
-                "SELECT d.rel_path, d.per_file, r.path FROM folders d "
+                "SELECT d.rel_path, d.per_file, d.included, r.path FROM folders d "
                 "JOIN roots r ON r.id = d.root_id WHERE d.id = ?",
                 (folder_id,),
             ).fetchone()
-            if folder is None or not folder["per_file"]:
-                return {"error": "Dieser Ordner verteilt seine Fotos nicht einzeln."}
+            if folder is None or not folder["included"]:
+                return {"error": "Das geht für angehakte Ordner und Ordner, die einzeln verteilen."}
             directory = scanner.folder_path(folder["path"], folder["rel_path"])
             self._read_capture_times(conn, folder_id, directory)
+            own_folder = None if folder["per_file"] else albums.album_folder(conn, folder_id)
+            folder_album = (
+                conn.execute(
+                    "SELECT id, title FROM albums WHERE id = ?", (own_folder["album_id"],)
+                ).fetchone()
+                if own_folder
+                else None
+            )
             rows = conn.execute(
                 "SELECT f.id, f.name, f.status, f.taken_at, f.mtime_ns, a.album_id, "
                 "b.title AS album, p.state AS photo FROM files f "
@@ -456,6 +464,14 @@ class Api:
                 "WHERE f.folder_id = ? AND f.status != 'missing'",
                 (folder_id,),
             ).fetchall()
+            extras: dict[int, list[str]] = {}
+            for row in conn.execute(
+                "SELECT e.file_id, b.title FROM file_extra_albums e "
+                "JOIN albums b ON b.id = e.album_id JOIN files f ON f.id = e.file_id "
+                "WHERE f.folder_id = ? ORDER BY b.title COLLATE NOCASE",
+                (folder_id,),
+            ):
+                extras.setdefault(row["file_id"], []).append(row["title"])
         files = []
         for row in rows:
             taken = row["taken_at"]
@@ -469,13 +485,37 @@ class Api:
                     "video": videoplans.is_video(row["name"]),
                     "skipped": row["status"].startswith("skipped_")
                     and not videoplans.too_large(row),
-                    "album_id": row["album_id"],
-                    "album": row["album"],
+                    "album_id": row["album_id"] if folder["per_file"] else folder_album["id"],
+                    "album": row["album"] if folder["per_file"] else folder_album["title"],
+                    "extras": extras.get(row["id"], []),
                     "done": row["photo"] == "verified",
                 }
             )
         files.sort(key=lambda file: (file["taken"], file["name"]))
-        return {"files": files}
+        return {"files": files, "per_file": bool(folder["per_file"])}
+
+    def add_to_album(self, file_ids: list[int], album_id: int) -> dict:
+        """Put files into one more album as well; uploaded once, added to each."""
+        try:
+            with self._database.connect() as conn:
+                added = albums.add_extra(conn, [int(i) for i in file_ids], int(album_id))
+        except db.RecordNotFoundError:
+            return {"error": "Dieses Album oder Foto gibt es nicht mehr. Bitte neu laden."}
+        return {"added": added}
+
+    def add_to_new_album(self, file_ids: list[int], title: str) -> dict:
+        try:
+            with self._database.connect() as conn:
+                album_id = albums.plan_album(conn, title)
+        except ValueError:
+            return {"error": "Der Albumtitel darf nicht leer sein."}
+        return {"album_id": album_id, **self.add_to_album(file_ids, album_id)}
+
+    def remove_from_album(self, file_ids: list[int], album_id: int) -> dict:
+        """Take an extra album away again (what is in it on Flickr stays there)."""
+        with self._database.connect() as conn:
+            removed = albums.remove_extra(conn, [int(i) for i in file_ids], int(album_id))
+        return {"removed": removed}
 
     def album_choices(self) -> list[dict]:
         """Every album a file can go into: on Flickr, or planned in this app."""
@@ -643,9 +683,20 @@ class Api:
                 "unchecked",
                 "video",
                 "unassigned",
+                "adds",
             ),
             0,
         )
+        with self._database.connect() as conn:
+            plan["adds"] = conn.execute(
+                "SELECT count(DISTINCT f.id) FROM files f "
+                "JOIN folders d ON d.id = f.folder_id "
+                "JOIN photos p ON p.hash = f.hash AND p.state = 'verified' "
+                "JOIN file_extra_albums e ON e.file_id = f.id "
+                "LEFT JOIN album_photos ap ON ap.album_id = e.album_id AND ap.photo_hash = f.hash "
+                "WHERE d.included = 1 AND d.missing = 0 AND f.status != 'missing' "
+                "AND (ap.state IS NULL OR ap.state = 'pending')"
+            ).fetchone()[0]
         for row in rows:
             plan["files"] += 1
             if row["per_file"]:

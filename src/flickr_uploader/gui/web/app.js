@@ -505,7 +505,7 @@ async function openSorter(folderId, folderName) {
 async function loadSorter() {
   const [files, albums] = await Promise.all([call("folder_files", sorter.folderId), call("album_choices")]);
   if (!files || !albums) return false;
-  sorter.data = { files: files.files, albums, folderName: sorter.folderName };
+  sorter.data = { files: files.files, per_file: files.per_file, albums, folderName: sorter.folderName };
   drawSorter();
   return true;
 }
@@ -519,7 +519,7 @@ function drawSorter() {
 
 const sorterActions = {
   toggle(fileId, range) {
-    const files = sorter.data.files.filter((file) => !file.done && !file.skipped).map((file) => file.id);
+    const files = sorter.data.files.filter((file) => !file.skipped).map((file) => file.id);
     if (range && sorter.last !== null) {
       const [from, to] = [files.indexOf(sorter.last), files.indexOf(fileId)].sort((a, b) => a - b);
       const on = !sorter.selected.has(fileId);
@@ -557,6 +557,42 @@ const sorterActions = {
     }
     if (!result) return;
     showToast(`${count(result.changed, "Foto", "Fotos")} → ${name}${result.kept ? ` (${result.kept} schon auf Flickr, bleiben in ihrem Album)` : ""}`);
+    sorter.selected.clear();
+    await loadSorter();
+  },
+  async addExtra(title) {
+    const name = title.trim();
+    if (!name) {
+      showDialog("Hinweis", "Bitte das weitere Album wählen oder den Namen eines neuen eintippen.");
+      return;
+    }
+    const ids = [...sorter.selected];
+    const existing = sorter.data.albums.find((album) => album.title === name);
+    let result;
+    if (existing) result = await call("add_to_album", ids, existing.id);
+    else {
+      const sure = await showDialog("Neues Album?", `Es gibt noch kein Album „${name}“. Es wird beim nächsten Upload auf Flickr angelegt.`, {
+        okLabel: "Neues Album",
+        cancel: true,
+      });
+      if (!sure) return;
+      result = await call("add_to_new_album", ids, name);
+    }
+    if (!result) return;
+    showToast(`${count(result.added, "Foto", "Fotos")} zusätzlich in „${name}“. Schon hochgeladene kommen beim nächsten „Hochladen starten“ dazu.`);
+    sorter.selected.clear();
+    await loadSorter();
+  },
+  async removeExtra(title) {
+    const name = title.trim();
+    const existing = sorter.data.albums.find((album) => album.title === name);
+    if (!existing) {
+      showDialog("Hinweis", "Bitte oben bei „Zusätzlich in“ das Album wählen, aus dem die Fotos wieder heraus sollen.");
+      return;
+    }
+    const result = await call("remove_from_album", [...sorter.selected], existing.id);
+    if (!result) return;
+    showToast(`${count(result.removed, "Foto", "Fotos")} nicht mehr zusätzlich in „${name}“. Was dort auf Flickr schon liegt, bleibt dort.`);
     sorter.selected.clear();
     await loadSorter();
   },

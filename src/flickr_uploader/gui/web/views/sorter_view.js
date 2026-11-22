@@ -1,7 +1,9 @@
-// "Fotos zuordnen": the files of a per-file folder, grouped by the day they were
-// taken, with a small preview. Select single photos (Shift: a range) or whole
-// days and give them an album, or take it away. Everything comes from the
-// database through the Python API; `state` only remembers the selection.
+// "Fotos ansehen" / "Fotos zuordnen": the files of a ticked folder, grouped by
+// the day they were taken, with a small preview. Select single photos (Shift:
+// a range) or whole days; in a per-file folder give them their album, in any
+// folder put them into further albums as well (uploaded once). Everything
+// comes from the database through the Python API; `state` only remembers the
+// selection and what was typed.
 
 import { count, el, icon } from "./ui.js";
 
@@ -10,7 +12,7 @@ const DAY = new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "numeric",
 export function renderSorter(container, data, state, act) {
   const files = data.files;
   const days = groupByDay(files);
-  const selectable = (file) => !file.done && !file.skipped;
+  const selectable = (file) => !file.skipped;
   const selected = files.filter((file) => state.selected.has(file.id));
 
   const albumInput = el("input", {
@@ -21,15 +23,39 @@ export function renderSorter(container, data, state, act) {
     value: state.albumText || "",
     oninput: (event) => (state.albumText = event.target.value),
   });
+  const extraInput = el("input", {
+    type: "text",
+    list: "sorter-albums",
+    placeholder: "Weiteres Album, z. B. für einen Post",
+    "aria-label": "Zusätzliches Album",
+    value: state.extraText || "",
+    oninput: (event) => (state.extraText = event.target.value),
+  });
+  const none = !selected.length;
   const bar = el(
     "div",
     { class: "sorter-bar" },
-    el("strong", { text: selected.length ? `${count(selected.length, "Foto", "Fotos")} ausgewählt` : "Nichts ausgewählt" }),
-    albumInput,
+    el("strong", { class: "sorter-count", text: none ? "Nichts ausgewählt" : `${count(selected.length, "Foto", "Fotos")} ausgewählt` }),
+    el("button", { class: "btn btn-ghost", disabled: none, onclick: act.clearSelection }, "Auswahl leeren"),
     el("datalist", { id: "sorter-albums" }, data.albums.map((album) => el("option", { value: album.title }))),
-    el("button", { class: "btn btn-primary", disabled: !selected.length, onclick: () => act.assign(albumInput.value) }, "Zuordnen"),
-    el("button", { class: "btn", disabled: !selected.length, onclick: act.unassign }, "Nicht hochladen"),
-    el("button", { class: "btn btn-ghost", disabled: !selected.length, onclick: act.clearSelection }, "Auswahl leeren"),
+    data.per_file
+      ? el(
+          "div",
+          { class: "sorter-row" },
+          el("span", { class: "sorter-label", text: "Album" }),
+          albumInput,
+          el("button", { class: "btn btn-primary", disabled: none, onclick: () => act.assign(albumInput.value) }, "Zuordnen"),
+          el("button", { class: "btn", disabled: none, onclick: act.unassign }, "Nicht hochladen"),
+        )
+      : null,
+    el(
+      "div",
+      { class: "sorter-row" },
+      el("span", { class: "sorter-label", text: "Zusätzlich in" }),
+      extraInput,
+      el("button", { class: data.per_file ? "btn" : "btn btn-primary", disabled: none, onclick: () => act.addExtra(extraInput.value) }, "Hinzufügen"),
+      el("button", { class: "btn btn-ghost", disabled: none, onclick: () => act.removeExtra(extraInput.value) }, "Daraus entfernen"),
+    ),
   );
 
   const groups = days.map(([day, dayFiles]) => {
@@ -65,12 +91,15 @@ export function renderSorter(container, data, state, act) {
       el(
         "div",
         { class: "sorter-head" },
-        el("h3", { id: "sorter-title" }, `Fotos zuordnen · ${data.folderName}`),
+        el("h3", { id: "sorter-title" }, `${data.per_file ? "Fotos zuordnen" : "Fotos ansehen"} · ${data.folderName}`),
         el("span", { class: "muted small", text: summary(files) }),
         el("span", { class: "spacer" }),
         el("button", { class: "btn btn-primary", onclick: act.close }, "Fertig"),
       ),
-      el("p", { class: "muted small", text: "Tipp: Einen ganzen Tag über sein Häkchen wählen, mehrere Fotos mit Umschalt-Klick. Nicht zugeordnete Fotos werden nicht hochgeladen." }),
+      el(
+        "p",
+        { class: "muted small", text: `Tipp: Einen ganzen Tag über sein Häkchen wählen, mehrere Fotos mit Umschalt-Klick. ${data.per_file ? "Nicht zugeordnete Fotos werden nicht hochgeladen. " : ""}„Zusätzlich in“ legt Fotos auch in ein weiteres Album, ohne sie doppelt hochzuladen; schon hochgeladene kommen beim nächsten „Hochladen starten“ dazu.` },
+      ),
       bar,
       el("div", { class: "sorter-days" }, groups.length ? groups : el("p", { class: "muted", text: "In diesem Ordner liegen keine Fotos." })),
     ),
@@ -103,6 +132,7 @@ function tile(file, state, selectable, act) {
         : file.album
           ? el("span", { class: "chip info", text: file.album })
           : el("span", { class: "chip", text: "kein Album" }),
+    file.extras.length ? el("span", { class: "chip", text: `+ ${file.extras.join(", ")}`, title: "Zusätzlich in diesen Alben" }) : null,
   );
 }
 
@@ -131,5 +161,7 @@ function dayText(files) {
 
 function summary(files) {
   const assigned = files.filter((file) => file.album).length;
-  return `${count(files.length, "Datei", "Dateien")} · ${assigned} zugeordnet · ${files.length - assigned} ohne Album`;
+  const extra = files.filter((file) => file.extras.length).length;
+  const extraText = extra ? ` · ${extra} auch in weiteren Alben` : "";
+  return `${count(files.length, "Datei", "Dateien")} · ${assigned} mit Album · ${files.length - assigned} ohne${extraText}`;
 }

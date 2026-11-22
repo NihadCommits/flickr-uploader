@@ -17,6 +17,9 @@ to your PC.
   trip can spread its photos over several albums, existing or new: photos
   grouped by the day they were taken, with previews, picked one by one or a
   whole day at a time.
+- **One photo, several albums.** Put chosen photos into further albums as
+  well, e.g. ten of a trip for a post, before or after the upload. Each photo
+  is uploaded only once.
 - **No duplicates.** Every upload carries a content-hash tag. Ticked folders
   are compared with the photos already on Flickr first; possible matches wait
   for your decision.
@@ -69,7 +72,8 @@ The interface is in German.
 
 1. *Ordner öffnen …*: pick the folder with your photos.
 2. Click a folder in the tree and choose *Als Album festlegen*, or *Fotos
-   einzeln auf Alben verteilen* and then *Fotos zuordnen …*.
+   einzeln auf Alben verteilen* and then *Fotos zuordnen …*. *Fotos ansehen …*
+   puts single photos into further albums (*Zusätzlich in*).
 3. Tick the subfolders to upload. A traffic light shows whether the album
    already exists on Flickr (green), will be created (blue) or needs your
    decision (yellow, e.g. a very similar title).

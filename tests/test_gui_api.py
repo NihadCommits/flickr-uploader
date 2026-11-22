@@ -302,6 +302,8 @@ def test_only_public_methods_reach_the_page():
     assert public == {
         "account",
         "add_root",
+        "add_to_album",
+        "add_to_new_album",
         "album_folders",
         "album_choices",
         "assign_files",
@@ -330,6 +332,7 @@ def test_only_public_methods_reach_the_page():
         "pause_job",
         "refresh_albums",
         "remove_album_folder",
+        "remove_from_album",
         "rename_flickr_album",
         "rename_planned_album",
         "reopen_login_page",

@@ -894,6 +894,12 @@ body.busy, body.busy * { cursor: progress !important; }
 
 .sorter-bar input { flex: 1 1 260px; min-width: 0; }
 
+.sorter-count { margin-right: auto; }
+
+.sorter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 100%; }
+
+.sorter-label { width: 90px; color: var(--text-2); font-size: 13px; }
+
 .sorter-days { flex: 1; min-height: 0; overflow: auto; display: grid; gap: 14px; align-content: start; }
 
 .sorter-day-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; cursor: pointer; }

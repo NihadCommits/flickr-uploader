@@ -19,6 +19,7 @@ COMPRESS = "compress"
 SPLIT = "split"
 TAKE_OVER = "take_over"  # the old Flickr photo the user picked
 DONE = "done"  # on Flickr already
+ADD = "add"  # on Flickr already, goes into further albums now
 LOOK_UP = "look_up"  # upload without answer: searched by hash tag first
 CHECK = "check"  # the pre-check runs first, then it goes up unless it finds a match
 WAIT_MATCH = "wait_match"
@@ -99,7 +100,9 @@ def dry_run(conn: sqlite3.Connection) -> DryRun:
             )
             planned[album_id] = PlannedAlbum(album["title"], state)
         album = planned[album_id]
-        album.files.append(_plan_file(conn, row, path, album.state == "waits"))
+        planned_file = _plan_file(conn, row, path, album.state == "waits")
+        _with_extras(conn, row["id"], planned_file)
+        album.files.append(planned_file)
 
     everything = [f for album in planned.values() for f in album.files] + outside
     totals: dict[str, int] = {}
@@ -111,6 +114,28 @@ def dry_run(conn: sqlite3.Connection) -> DryRun:
         for album in planned.values()
     )
     return DryRun(list(planned.values()), outside, totals)
+
+
+def _with_extras(conn: sqlite3.Connection, file_id: int, planned: PlannedFile) -> None:
+    """Note the further albums a file still goes into."""
+    pending = [
+        row["title"]
+        for row in conn.execute(
+            "SELECT b.title, ap.state FROM file_extra_albums e JOIN albums b ON b.id = e.album_id "
+            "JOIN files f ON f.id = e.file_id "
+            "LEFT JOIN album_photos ap ON ap.album_id = e.album_id AND ap.photo_hash = f.hash "
+            "WHERE e.file_id = ? ORDER BY b.title COLLATE NOCASE",
+            (file_id,),
+        )
+        if row["state"] in (None, "pending")
+    ]
+    if not pending:
+        return
+    if planned.action == DONE:
+        planned.action, planned.detail = ADD, ", ".join(pending)
+    elif planned.uploads:
+        also = "auch in " + ", ".join(pending)
+        planned.detail = f"{planned.detail}; {also}" if planned.detail else also
 
 
 def _plan_file(conn: sqlite3.Connection, row: sqlite3.Row, path: str, album_waits: bool):

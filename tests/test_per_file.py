@@ -148,7 +148,7 @@ def test_sorting_photos_in_the_window(database, conn, tmp_path, flickr):
     api.refresh_albums()
     folder_id = next(f["id"] for f in api.tree(root_id)["folders"] if f["path"] == "Export")
 
-    assert "einzeln" in api.folder_files(folder_id)["error"]
+    assert "angehakt" in api.folder_files(folder_id)["error"]
     assert api.set_per_file(folder_id, True) == {}
     files = api.folder_files(folder_id)["files"]
     assert [(f["name"], f["taken"]) for f in files] == [

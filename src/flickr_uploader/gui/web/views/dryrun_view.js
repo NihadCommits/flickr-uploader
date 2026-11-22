@@ -11,6 +11,7 @@ const ACTIONS = {
   look_up: ["wird erst auf Flickr gesucht (Upload ohne Antwort)", "go"],
   take_over: ["altes Flickr-Foto wird übernommen", "ok"],
   done: ["schon auf Flickr", "ok"],
+  add: ["schon auf Flickr, kommt in weitere Alben", "go"],
   wait_match: ["wartet: vielleicht schon auf Flickr, bitte entscheiden", "wait"],
   wait_album: ["wartet: das Album braucht eine Entscheidung", "wait"],
   wait_video: ["wartet: Komprimieren oder Aufteilen wählen", "wait"],
@@ -32,6 +33,7 @@ export function renderDryRun(container, result, close) {
   const summary = [
     `${count(totals.uploads, "Upload", "Uploads")} zu Flickr`,
     totals.new_albums ? count(totals.new_albums, "neues Album", "neue Alben") : null,
+    totals.add ? `${totals.add} kommen in weitere Alben` : null,
     totals.done ? `${totals.done} schon oben` : null,
     totals.take_over ? `${totals.take_over} übernommen` : null,
     waiting ? `${waiting} warten` : null,

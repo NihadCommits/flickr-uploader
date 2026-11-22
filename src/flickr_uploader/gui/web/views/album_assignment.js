@@ -28,6 +28,15 @@ export function renderDetails(container, folder, folders, context, act) {
           ? perFileSection(folder, act)
           : assignSection(folder, act),
     folder.in_album ? uploadSection(folder) : null,
+    folder.included && !folder.per_file
+      ? el(
+          "div",
+          { class: "section" },
+          el("p", { class: "section-title", text: "Einzelne Fotos" }),
+          el("p", { class: "muted small", text: "Fotos mit Aufnahmedatum ansehen und einzelne auch in weitere Alben legen, z. B. eine Auswahl für einen Post. Hochgeladen wird trotzdem nur einmal." }),
+          el("button", { class: "btn", text: "Fotos ansehen …", onclick: () => act.openSorter(folder.id, folder.name) }),
+        )
+      : null,
     folder.included ? decisionsSection(folder, context.matches, act) : null,
     folder.included ? videosSection(context.videos, act) : null,
     contentSection(folder),

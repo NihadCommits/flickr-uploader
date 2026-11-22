@@ -75,6 +75,7 @@ function idle(plan, run, job, act) {
       : "Noch keine Ordner angehakt";
   const details = [];
   if (plan.decide) details.push(`${plan.decide} warten auf deine Entscheidung`);
+  if (plan.adds) details.push(`${plan.adds} schon hochgeladene kommen in weitere Alben`);
   if (plan.unassigned) details.push(`${plan.unassigned} ohne Album (werden nicht hochgeladen)`);
   if (plan.video) details.push(`${plan.video} zu große Videos warten auf „Komprimieren“ oder „Aufteilen“`);
   if (plan.album) details.push(`${plan.album} in Alben, die eine Entscheidung brauchen`);
@@ -98,9 +99,9 @@ function idle(plan, run, job, act) {
       el("button", { class: "btn", disabled: !plan.files, onclick: act.dryRun }, "Probelauf"),
       el(
         "button",
-        { class: "btn btn-primary", disabled: !plan.ready || otherRunning, onclick: act.startUpload },
+        { class: "btn btn-primary", disabled: !(plan.ready || plan.adds) || otherRunning, onclick: act.startUpload },
         icon("upload", 14),
-        lastWasPaused && plan.ready ? "Fortsetzen" : "Hochladen starten",
+        lastWasPaused && (plan.ready || plan.adds) ? "Fortsetzen" : "Hochladen starten",
       ),
     ),
   ];
@@ -116,6 +117,8 @@ function reportText(report) {
   if (report.uploaded) parts.push(`${report.uploaded} hochgeladen`);
   if (report.adopted) parts.push(`${report.adopted} übernommen`);
   if (report.already_done) parts.push(`${report.already_done} waren schon oben`);
+  // Without uploads, what was done is putting photos into (further) albums.
+  if (report.added_to_albums && !report.uploaded) parts.push(`${count(report.added_to_albums, "Foto", "Fotos")} in Alben gelegt`);
   if (report.albums_created) parts.push(`${count(report.albums_created, "Album", "Alben")} angelegt`);
   if (report.waiting) parts.push(`${report.waiting} warten`);
   if (report.failed) parts.push(`${report.failed} Fehler`);

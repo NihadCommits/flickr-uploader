@@ -298,14 +298,15 @@ class _Run:
             return
         if precheck.chosen_flickr_photo(self.conn, file.id):
             how = videoplans.ORIGINAL  # the user said it is on Flickr already
+        targets = [album_id, *self.extra_albums(file)]
 
         failures = self.connection_failures
         try:
             with jobs.flickr_step():
                 if how == videoplans.ORIGINAL:
-                    self.advance(file, album_id, final=final)
+                    self.advance(file, targets, final=final)
                 else:
-                    self.advance_video(file, album_id, how, final=final)
+                    self.advance_video(file, targets, how, final=final)
         except FlickrUnavailableError as error:
             self.log("warning", f"No connection to Flickr ({error}): {file.path}", file_id=file.id)
             self.connection_failed()
@@ -316,14 +317,31 @@ class _Run:
             if self.connection_failures == failures:
                 self.connection_failures = 0
 
-    def advance(self, file: _File, album_id: int, *, final: bool) -> None:
+    def extra_albums(self, file: _File) -> list[int]:
+        """The file's further albums; one waiting for a decision (yellow) is left out."""
+        extras = []
+        for album_id in albums.extra_albums(self.conn, file.id):
+            if self.lights.get(album_id) == albums.YELLOW:
+                if album_id not in self.reported_albums:
+                    self.reported_albums.add(album_id)
+                    title = self.album(album_id)["title"]
+                    self.log(
+                        "warning",
+                        f"Album '{title}' waits for your decision (similar or duplicate "
+                        "titles on Flickr); nothing is added to it yet",
+                    )
+                continue
+            extras.append(album_id)
+        return extras
+
+    def advance(self, file: _File, album_ids: list[int], *, final: bool) -> None:
         """Move one file's photo as far along its state machine as possible."""
         digest = self.digest(file)
         if digest is None:
             return
-        self.advance_photo(file, album_id, digest, final=final)
+        self.advance_photo(file, album_ids, digest, final=final)
 
-    def advance_video(self, file: _File, album_id: int, how: str, *, final: bool) -> None:
+    def advance_video(self, file: _File, album_ids: list[int], how: str, *, final: bool) -> None:
         """Plan a video's pieces once, then move each one along like a photo."""
         source = self.source_hash(file)
         if source is None:
@@ -350,17 +368,24 @@ class _Run:
         for part, digest in enumerate(digests, start=1):
             self.check_cancel()
             piece = _Piece(how, part, len(digests))
-            self.advance_photo(file, album_id, digest, final=final, piece=piece)
+            self.advance_photo(file, album_ids, digest, final=final, piece=piece)
 
     def advance_photo(
-        self, file: _File, album_id: int, digest: str, *, final: bool, piece: _Piece | None = None
+        self,
+        file: _File,
+        album_ids: list[int],
+        digest: str,
+        *,
+        final: bool,
+        piece: _Piece | None = None,
     ) -> None:
-        """The photo (or video piece) `digest` of a file, as far as it gets."""
-        self.conn.execute(
-            "INSERT OR IGNORE INTO album_photos (album_id, photo_hash, state, updated_at) "
-            "VALUES (?, ?, 'pending', ?)",
-            (album_id, digest, db.utc_now()),
-        )
+        """The photo (or video piece) `digest` of a file, as far as it gets, in all its albums."""
+        for album_id in album_ids:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO album_photos (album_id, photo_hash, state, updated_at) "
+                "VALUES (?, ?, 'pending', ?)",
+                (album_id, digest, db.utc_now()),
+            )
         photo = self.photo(digest)
         state = photo["state"]
         if state == "verified":
@@ -386,8 +411,9 @@ class _Run:
         if state == "uploaded":
             state = self.verify(file, digest)
         if state == "verified":
-            self.pairs.add((album_id, digest))
-            self.put_into_album(album_id, digest)
+            for album_id in album_ids:
+                self.pairs.add((album_id, digest))
+                self.put_into_album(album_id, digest)
         elif state == "unclear":
             if final:
                 self.report.unclear += 1
