@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 MIN_SQLITE_VERSION = (3, 37, 0)  # first version with STRICT tables
 BUSY_TIMEOUT_SECONDS = 5.0
 DEFAULT_KEEP_BACKUPS = 10
@@ -270,6 +270,11 @@ CREATE TABLE file_extra_albums (
 CREATE INDEX idx_file_extra_albums_album ON file_extra_albums(album_id);
 """
 
+_SCHEMA_V6 = """
+-- Place of the album in the user's album list on Flickr (0 = first), as last read.
+ALTER TABLE albums ADD COLUMN position INTEGER;
+"""
+
 # Schema version -> SQL that upgrades from the previous version.
 _MIGRATIONS: dict[int, str] = {
     1: _SCHEMA_V1,
@@ -277,6 +282,7 @@ _MIGRATIONS: dict[int, str] = {
     3: _SCHEMA_V3,
     4: _SCHEMA_V4,
     5: _SCHEMA_V5,
+    6: _SCHEMA_V6,
 }
 
 

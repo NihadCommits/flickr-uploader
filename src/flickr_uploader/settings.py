@@ -22,6 +22,7 @@ DOWNLOAD_MEDIA = "download_media"  # filter preselected when an album is picked
 SYNC_AT_START = "sync_albums_at_start"  # read the album list from Flickr at start
 VIDEO_TOO_LARGE = "video_too_large"  # over 1 GB: "ask", "compress" or "split"
 VIDEO_TOO_LONG = "video_too_long"  # over 10 minutes: "keep" (upload whole) or "split"
+PINNED_ALBUMS = "pinned_albums"  # Flickr ids of albums kept at the top when sorting
 FLICKR_ACCOUNT = "flickr_account"  # {"nsid", "username"}: whose photos the database holds
 
 
@@ -37,6 +38,9 @@ _SETTINGS = {
     SYNC_AT_START: _Setting(True, lambda value: isinstance(value, bool)),
     VIDEO_TOO_LARGE: _Setting("ask", lambda value: value in ("ask", "compress", "split")),
     VIDEO_TOO_LONG: _Setting("keep", lambda value: value in ("keep", "split")),
+    PINNED_ALBUMS: _Setting(
+        [], lambda value: isinstance(value, list) and all(_text(item) for item in value)
+    ),
     FLICKR_ACCOUNT: _Setting(None, lambda value: value is None or _account(value)),
 }
 

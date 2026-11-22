@@ -939,3 +939,31 @@ body.busy, body.busy * { cursor: progress !important; }
 .sorter-time { font-weight: 600; font-size: 13px; }
 
 .sorter-name { font-size: 12px; color: var(--text-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --- Editing the album list ------------------------------------------------- */
+
+.edit-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.edit-hint { margin: 0; flex-basis: 100%; }
+
+.list.editing li { gap: 10px; }
+
+.list.editing li.renamed { background: var(--blue-soft); }
+
+.list .place { width: 28px; text-align: right; color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.list input.rename { width: 100%; }
+
+.btn.pin.on { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+
+.btn-save { background: var(--pink); border-color: var(--pink); }
+
+.btn-save:hover { background: #e00074; border-color: #e00074; }

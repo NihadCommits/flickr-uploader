@@ -193,6 +193,11 @@ class FakeFlickr:
         album = self.sets[album_id]
         album.title, album.description = title, description
 
+    def order_albums(self, album_ids):
+        self._enter("order_albums")
+        rest = [album_id for album_id in self.sets if album_id not in album_ids]
+        self.sets = {album_id: self.sets[album_id] for album_id in [*album_ids, *rest]}
+
     # --- Downloads ----------------------------------------------------------------
 
     def album_media(self, album_id, media="all"):

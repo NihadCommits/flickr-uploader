@@ -120,6 +120,8 @@ class Api:
         self._limiter = RateLimiter()
         self._prechecks: set[int] = set()
         self._prechecks_lock = threading.Lock()
+        # When the oldest photo of each album was taken (Flickr id -> time), on demand.
+        self._taken: dict[str, str | None] = {}
         # Previews of photos, made on demand; only in memory, never on disk.
         self._thumbnails: OrderedDict[tuple[int, int], str | None] = OrderedDict()
         self._thumbnails_lock = threading.Lock()
@@ -1104,15 +1106,97 @@ class Api:
         ]
 
     def flickr_albums(self) -> dict:
-        """The user's albums on Flickr as last read, and which folders use them."""
+        """The user's albums on Flickr as last read, in their order there."""
         with self._database.connect() as conn:
             rows = conn.execute(
-                "SELECT a.id, a.title, a.photo_count, a.video_count, "
+                "SELECT a.id, a.title, a.photo_count, a.video_count, a.position, a.flickr_id, "
                 "(SELECT count(*) FROM folders d WHERE d.album_id = a.id AND d.missing = 0) "
-                "AS used_by FROM albums a WHERE a.state = 'exists' ORDER BY a.title COLLATE NOCASE"
+                "AS used_by FROM albums a WHERE a.state = 'exists' "
+                "ORDER BY a.position IS NULL, a.position, a.title COLLATE NOCASE"
             ).fetchall()
             synced_at = conn.execute("SELECT max(last_synced) FROM albums").fetchone()[0]
-        return {"synced_at": synced_at, "albums": [dict(row) for row in rows]}
+            pinned = set(settings.get(conn, settings.PINNED_ALBUMS))
+        albums_list = [
+            {
+                **dict(row),
+                "pinned": row["flickr_id"] in pinned,
+                "taken": self._taken.get(row["flickr_id"]),
+            }
+            for row in rows
+        ]
+        return {"synced_at": synced_at, "albums": albums_list}
+
+    def album_dates(self) -> dict:
+        """When the oldest photo of each album was taken, read from Flickr once per album.
+
+        Kept until the app closes; albums Flickr can't read are left without.
+        """
+        try:
+            client = self._flickr()
+        except auth.AuthError as error:
+            return {"error": _login_error(error)}
+        with self._database.connect() as conn:
+            ids = [
+                row[0]
+                for row in conn.execute("SELECT flickr_id FROM albums WHERE state = 'exists'")
+            ]
+        missing = [flickr_id for flickr_id in ids if flickr_id not in self._taken]
+        for flickr_id in missing:
+            try:
+                self._taken[flickr_id] = albums.first_taken(client, flickr_id)
+            except FlickrClientError:
+                continue
+        return {"read": len(missing)}
+
+    def save_albums(self, renames: list[dict], order: list[int] | None, pinned: list[int]) -> dict:
+        """Rename albums on Flickr, then set the order of all albums there (if given)."""
+        if self._job_is_running():
+            return {"error": "Bitte erst den laufenden Upload oder Download anhalten."}
+        try:
+            client = self._flickr()
+        except auth.AuthError as error:
+            return {"error": _login_error(error)}
+        failed: list[str] = []
+        renamed = 0
+        with self._database.connect() as conn:
+            for change in renames:
+                album_id, title = int(change["album_id"]), str(change["title"]).strip()
+                if not title:
+                    continue
+                try:
+                    albums.rename_on_flickr(conn, client, album_id, title)
+                except (albums.AlbumError, FlickrClientError):
+                    failed.append(title)
+                    continue
+                current = conn.execute(
+                    "SELECT title FROM albums WHERE id = ?", (album_id,)
+                ).fetchone()
+                if current is not None and current["title"] == title:
+                    renamed += 1
+                else:
+                    failed.append(title)  # refused by Flickr or kept pending (see log)
+            flickr_ids = {
+                row["id"]: row["flickr_id"]
+                for row in conn.execute("SELECT id, flickr_id FROM albums WHERE state = 'exists'")
+            }
+            settings.put(
+                conn,
+                settings.PINNED_ALBUMS,
+                [flickr_ids[int(i)] for i in pinned if int(i) in flickr_ids],
+            )
+            ordered = False
+            if order:
+                try:
+                    albums.set_order(conn, client, [int(i) for i in order])
+                    ordered = True
+                except FlickrClientError as error:
+                    return {
+                        "renamed": renamed,
+                        "failed": failed,
+                        "error": f"Die Reihenfolge konnte nicht gesetzt werden ({error}). "
+                        f"Umbenannt wurden {renamed} Alben.",
+                    }
+        return {"renamed": renamed, "failed": failed, "ordered": ordered}
 
     # --- Helpers ---------------------------------------------------------------------
 

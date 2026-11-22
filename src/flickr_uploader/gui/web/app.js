@@ -4,7 +4,7 @@
 // is on screen: tab, source folder, selected row, opened branches, search.
 
 import { renderDetails } from "./views/album_assignment.js";
-import { renderAlbums } from "./views/album_overview.js";
+import { editedChanges, renderAlbums, saveLabel, SORTS } from "./views/album_overview.js";
 import { renderDownloadAlbums, renderDownloadCard } from "./views/download_view.js";
 import { renderTree } from "./views/folder_browser.js";
 import { renderDryRun } from "./views/dryrun_view.js";
@@ -27,10 +27,13 @@ const view = {
   // The download form: picked albums (id -> filter) and the search.
   download: { selected: new Map(), search: "" },
   accountForm: false, // the Flickr setup is open although a login exists
+  // Editing the album list: new names (album id -> text), sort, pinned albums.
+  albumEdit: null,
 };
 // Last answers of the API, kept only to render again without asking twice.
 let downloadFlickr = { albums: [], synced_at: null };
 let prefs = null;
+let albumList = [];
 let lastPlan = null;
 let status = null;
 let pollTimer = null;
@@ -215,7 +218,8 @@ function revealInTree(folders) {
 async function renderAlbumTab() {
   const [folders, flickr] = await Promise.all([call("album_folders"), call("flickr_albums")]);
   if (!folders || !flickr) return;
-  renderAlbums($("albums-view"), folders, flickr, view, { reveal, syncAlbums });
+  albumList = flickr.albums;
+  renderAlbums($("albums-view"), folders, flickr, view, { reveal, syncAlbums, ...albumEditActions });
 }
 
 async function loadPrefs() {
@@ -635,6 +639,90 @@ const sorterActions = {
     for (const holder of container.querySelectorAll(".sorter-thumb[data-file]")) {
       if (!holder.querySelector("img")) sorter.observer.observe(holder);
     }
+  },
+};
+
+// --- Renaming and ordering the albums on Flickr ---------------------------------------
+
+const albumEditActions = {
+  async startEdit() {
+    view.albumEdit = { drafts: new Map(), sort: "flickr", pinned: new Set(albumList.filter((a) => a.pinned).map((a) => a.id)) };
+    await renderAlbumTab();
+  },
+  async cancelEdit() {
+    const { renames, order } = editedChanges(albumList, view.albumEdit);
+    if (renames.length || order) {
+      const sure = await showDialog("Änderungen verwerfen?", "Die neuen Namen und die Reihenfolge wurden noch nicht gespeichert.", { okLabel: "Verwerfen", cancel: true });
+      if (!sure) return;
+    }
+    view.albumEdit = null;
+    await renderAlbumTab();
+  },
+  async setSort(sort) {
+    view.albumEdit.sort = sort;
+    if (sort.startsWith("taken") && !view.albumEdit.datesRead) {
+      const result = await busy("Aufnahmedaten der Alben werden bei Flickr gelesen …", () => call("album_dates"));
+      if (!result) return;
+      view.albumEdit.datesRead = true;
+    }
+    await renderAlbumTab();
+  },
+  openRename(albumId, title) {
+    view.albumEdit.drafts.set(albumId, title);
+    renderAlbumTab().then(() => {
+      const input = $("albums-view").querySelector(`input.rename[data-album="${albumId}"]`);
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
+  },
+  setDraft(albumId, text) {
+    view.albumEdit.drafts.set(albumId, text);
+    // Only the button text changes; the list stays as it is while typing.
+    $("albums-save").textContent = saveLabel(albumList, view.albumEdit);
+  },
+  dropDraft(albumId) {
+    view.albumEdit.drafts.delete(albumId);
+    renderAlbumTab();
+  },
+  togglePin(albumId) {
+    const pinned = view.albumEdit.pinned;
+    pinned.has(albumId) ? pinned.delete(albumId) : pinned.add(albumId);
+    renderAlbumTab();
+  },
+  async saveEdit() {
+    const edit = view.albumEdit;
+    const { renames, order } = editedChanges(albumList, edit);
+    const pinnedBefore = albumList.filter((a) => a.pinned).map((a) => a.id).sort().join();
+    const pinnedNow = [...edit.pinned].sort().join();
+    if (!renames.length && !order && pinnedBefore === pinnedNow) {
+      view.albumEdit = null;
+      await renderAlbumTab();
+      return;
+    }
+    const sortName = SORTS.find(([value]) => value === edit.sort)[1];
+    const what = [
+      renames.length ? `${count(renames.length, "Album", "Alben")} umbenennen` : null,
+      order ? `die Reihenfolge aller ${albumList.length} Alben neu setzen (${sortName})` : null,
+    ].filter(Boolean);
+    const sure = await showDialog("Auf Flickr speichern?", `${what.join(" und ") || "Oben gehaltene Alben merken"}. Deine bisherige Reihenfolge auf Flickr wird dabei ersetzt.`, {
+      okLabel: "Speichern",
+      cancel: true,
+    });
+    if (!sure) return;
+    const result = await busy("Wird auf Flickr gespeichert …", () =>
+      call("save_albums", renames.map(({ album_id, title }) => ({ album_id, title })), order, [...edit.pinned]),
+    );
+    if (!result) return;
+    view.albumEdit = null;
+    const parts = [result.renamed ? `${count(result.renamed, "Album", "Alben")} umbenannt` : null, result.ordered ? "Reihenfolge gesetzt" : null].filter(Boolean);
+    showToast(parts.join(", ") || "Gespeichert");
+    if (result.failed.length) {
+      showDialog("Nicht alles umbenannt", `Diese Namen wurden noch nicht übernommen (Details im Protokoll; vorgemerkte holt der nächste Abgleich nach): ${result.failed.join(", ")}`);
+    }
+    await renderAlbumTab();
+    await renderFolders();
   },
 };
 

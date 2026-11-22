@@ -468,11 +468,12 @@ def sync_with_flickr(conn: sqlite3.Connection, client) -> SyncReport:
     ]
     now = db.utc_now()
     with db.transaction(conn):
-        for album in remote:
+        # getList gives the albums in the user's order on Flickr.
+        for position, album in enumerate(remote):
             if album.id in known:
                 conn.execute(
                     "UPDATE albums SET title = ?, description = ?, photo_count = ?, "
-                    "video_count = ?, last_synced = ?, updated_at = ?, "
+                    "video_count = ?, position = ?, last_synced = ?, updated_at = ?, "
                     "pending_title = CASE WHEN pending_title = ? THEN NULL ELSE pending_title END "
                     "WHERE id = ?",
                     (
@@ -480,6 +481,7 @@ def sync_with_flickr(conn: sqlite3.Connection, client) -> SyncReport:
                         album.description,
                         album.photo_count,
                         album.video_count,
+                        position,
                         now,
                         now,
                         album.title,
@@ -489,13 +491,15 @@ def sync_with_flickr(conn: sqlite3.Connection, client) -> SyncReport:
             else:
                 conn.execute(
                     "INSERT INTO albums (title, description, flickr_id, state, photo_count, "
-                    "video_count, last_synced, updated_at) VALUES (?, ?, ?, 'exists', ?, ?, ?, ?)",
+                    "video_count, position, last_synced, updated_at) "
+                    "VALUES (?, ?, ?, 'exists', ?, ?, ?, ?, ?)",
                     (
                         album.title,
                         album.description,
                         album.id,
                         album.photo_count,
                         album.video_count,
+                        position,
                         now,
                         now,
                     ),
@@ -507,6 +511,32 @@ def sync_with_flickr(conn: sqlite3.Connection, client) -> SyncReport:
     report.renamed = apply_pending_renames(conn, client)
     report.merged = _merge_green(conn)
     return report
+
+
+def set_order(conn: sqlite3.Connection, client, album_ids: list[int]) -> None:
+    """Put the albums on Flickr in this order (first = top); others follow after them.
+
+    Only albums on Flickr count; the order is sent in one call and then
+    remembered as their positions.
+    """
+    rows = {
+        row["id"]: row["flickr_id"]
+        for row in conn.execute("SELECT id, flickr_id FROM albums WHERE state = 'exists'")
+    }
+    ordered = [album_id for album_id in album_ids if album_id in rows]
+    rest = sorted(set(rows) - set(ordered), key=lambda album_id: album_id)
+    flickr_ids = [rows[album_id] for album_id in ordered + rest]
+    client.order_albums(flickr_ids)
+    with db.transaction(conn):
+        for position, album_id in enumerate(ordered + rest):
+            conn.execute("UPDATE albums SET position = ? WHERE id = ?", (position, album_id))
+    db.log_event(conn, "info", f"Order of {len(flickr_ids)} albums set on Flickr")
+
+
+def first_taken(client, flickr_id: str) -> str | None:
+    """When the oldest photo or video of an album was taken ("YYYY-MM-DD HH:MM:SS")."""
+    dates = [item.taken for item in client.album_media(flickr_id, "all") if item.taken]
+    return min(dates) if dates else None
 
 
 def create_on_flickr(

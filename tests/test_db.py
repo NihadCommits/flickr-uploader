@@ -147,7 +147,7 @@ def test_version_1_database_is_migrated_to_the_current_version(tmp_path):
         add_photo(raw)
 
     with db.Database(path) as database, database.connect() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 5
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 6
         assert conn.execute("SELECT count(*) FROM photos").fetchone()[0] == 1
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(files)")}
         assert "duration_seconds" in columns

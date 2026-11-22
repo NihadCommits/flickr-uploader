@@ -86,7 +86,10 @@ Datei. (Im Terminal geht das genauso:
    der aktuellen Datei an, *Fortsetzen* macht dort weiter.
 
 **Alben**: deine Album-Ordner und deine Alben auf Flickr; ein Ordner kann ein
-vorhandenes Album verwenden, das dort anders heißt.
+vorhandenes Album verwenden, das dort anders heißt. *Bearbeiten* benennt
+Alben gesammelt um und sortiert sie auf Flickr nach Name (A→Z, Z→A) oder nach
+Aufnahmedatum, ausgewählte Alben bleiben oben. Auf Flickr ändert sich erst
+etwas mit *Speichern*.
 
 **Herunterladen**: Alben anhaken, pro Album *Alles*, *Fotos* oder *Videos*
 wählen, einen Zielordner außerhalb deiner Foto-Ordner wählen und starten.

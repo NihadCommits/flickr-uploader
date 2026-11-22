@@ -306,6 +306,7 @@ def test_only_public_methods_reach_the_page():
         "add_to_new_album",
         "album_folders",
         "album_choices",
+        "album_dates",
         "assign_files",
         "assign_files_to_new_album",
         "backup_now",
@@ -337,6 +338,7 @@ def test_only_public_methods_reach_the_page():
         "rename_planned_album",
         "reopen_login_page",
         "reset_choice",
+        "save_albums",
         "roots",
         "scan",
         "set_included",
@@ -566,6 +568,7 @@ def test_settings_defaults_and_changes(api):
         "sync_albums_at_start": True,
         "video_too_large": "ask",
         "video_too_long": "keep",
+        "pinned_albums": [],
         "flickr_account": None,
         "download_target_problem": None,
     }

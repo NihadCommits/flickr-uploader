@@ -469,6 +469,10 @@ class FlickrClient:
         API docs leave open whether leaving it out clears it."""
         self._call("photosets.editMeta", photoset_id=album_id, title=title, description=description)
 
+    def order_albums(self, album_ids: list[str]) -> None:
+        """Set the order of the albums on Flickr (first = top); missing ones go to the end."""
+        self._call("photosets.orderSets", photoset_ids=",".join(album_ids))
+
     # --- Downloads ------------------------------------------------------------
 
     def album_media(self, album_id: str, media: str = "all") -> list[MediaItem]:

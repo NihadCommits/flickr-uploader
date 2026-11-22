@@ -12,6 +12,7 @@ def test_defaults_without_stored_values(conn):
         "sync_albums_at_start": True,
         "video_too_large": "ask",
         "video_too_long": "keep",
+        "pinned_albums": [],
         "flickr_account": None,
     }
 
@@ -28,6 +29,7 @@ def test_values_are_stored_at_once_and_replaced(conn):
         "sync_albums_at_start": False,
         "video_too_large": "ask",
         "video_too_long": "keep",
+        "pinned_albums": [],
         "flickr_account": {"nsid": "12345@N00", "username": "someone"},
     }
     assert conn.execute("SELECT count(*) FROM settings").fetchone()[0] == 4

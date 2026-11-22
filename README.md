@@ -84,7 +84,10 @@ The interface is in German.
    the current file, *Fortsetzen* carries on.
 
 **Alben**: your album folders and your albums on Flickr; a folder can use an
-existing album with a different name.
+existing album with a different name. *Bearbeiten* renames albums in bulk and
+sorts them on Flickr by name (A→Z, Z→A) or by when their photos were taken,
+with chosen albums kept at the top; nothing changes on Flickr before
+*Speichern*.
 
 **Herunterladen**: tick albums, choose *Alles*, *Fotos* or *Videos* for each,
 pick a target folder outside your photo folders and start.

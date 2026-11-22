@@ -613,6 +613,13 @@ CREATE TABLE file_extra_albums (
 CREATE INDEX idx_file_extra_albums_album ON file_extra_albums(album_id);
 ```
 
+Migration v6 (2026-11-22, siehe "Alben bearbeiten: umbenennen und sortieren"):
+
+```sql
+-- Platz des Albums in der Albenliste auf Flickr (0 = erstes), Stand des letzten Abgleichs.
+ALTER TABLE albums ADD COLUMN position INTEGER;
+```
+
 ## Zustandsautomaten
 
 ### Foto (`photos.state`)
@@ -1090,6 +1097,24 @@ dessen gemischte Fehlersignale in vier klare Fälle:
   zu erschließen war): Über dem Ordnerbaum zeigt eine Schrittleiste die vier
   Schritte (Ordner öffnen, Album-Ordner festlegen, Ordner anhaken, Hochladen),
   was erledigt ist und was als Nächstes dran ist, mit einem Satz dazu.
+- **Alben bearbeiten: umbenennen und sortieren** (gewünscht am 2026-11-22,
+  Reiter "Alben"): "Bearbeiten" schaltet die Liste der Flickr-Alben in einen
+  Bearbeitungsmodus. Neben jedem Album öffnet "Umbenennen" ein Textfeld (der
+  Cursor steht gleich darin). Neue Namen sind Formulareingaben der Seite und
+  bleiben erhalten, auch wenn man umsortiert oder sucht, bis man oben auf
+  "Speichern" drückt oder "Abbrechen". Sortieren: Reihenfolge auf Flickr (wie
+  bisher), Name A→Z, Name Z→A (natürliche Sortierung, mit den neuen Namen;
+  bei Titeln im Format "JJJJ-MM-TT - Name" ist das zugleich nach Datum) oder
+  nach Aufnahmedatum (ältestes Foto des Albums, neueste oder älteste zuerst;
+  die Daten holt die App dafür einmal pro Album bei Flickr, gemerkt bis zum
+  Neustart). Alben lassen sich oben festhalten (z. B. "Instagram"), gemerkt
+  als Einstellung `pinned_albums` (Flickr-IDs). "Speichern" fragt nach,
+  benennt dann jedes geänderte Album um (wie "Auf Flickr umbenennen", mit
+  `pending_title`) und setzt, wenn sich die Reihenfolge ändert, die
+  Reihenfolge aller Alben auf Flickr per `photosets.orderSets`. Die App
+  merkt sich den Platz jedes Albums auf Flickr (`albums.position`, beim
+  Abgleich gelesen) und zeigt die Liste in dieser Reihenfolge. Während eines
+  Uploads oder Downloads ist Speichern gesperrt.
 - **Albenliste automatisch:** Beim Start holt die App die Albenliste von
   Flickr (wenn angemeldet), damit die Ampel stimmt, ohne dass man daran denken
   muss. Danach meldet sie, was das für die eigenen Album-Ordner heißt (z. B.
