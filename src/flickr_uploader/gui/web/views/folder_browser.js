@@ -76,6 +76,7 @@ function folderRow(folder, view, on, rootPath, hasChildren) {
     el("span", { class: "row-name", text: folder.name, title: folder.parent === null ? rootPath : folder.path }),
     folder.files ? el("span", { class: "row-meta", text: `${count(folder.files, "Datei", "Dateien")} · ${formatBytes(folder.bytes)}` }) : null,
     folder.album ? albumChip(folder.album) : null,
+    folder.per_file ? el("span", { class: "chip info", title: "Fotos einzeln auf Alben verteilt" }, `einzeln · ${count(folder.per_file.albums, "Album", "Alben")}`) : null,
     folder.included ? statusChips(folder) : null,
   );
 }

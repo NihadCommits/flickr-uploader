@@ -62,8 +62,8 @@ eigene, spätere Entscheidung des Nutzers auf Flickr, unabhängig von diesem Too
   `2026-06 Portugal`. Der Albumtitel wird mit dem Ordnernamen vorbelegt, ist
   aber **jederzeit manuell änderbar** (siehe "Albumnamen manuell anpassen").
 - **Der Elternordner ist führend.** Unterhalb eines Album-Ordners kann kein
-  weiterer Album-Ordner liegen, die UI verhindert das. Sonderfälle (Unterordner
-  in ein anderes Album) werden manuell außerhalb des Tools erledigt.
+  weiterer Album-Ordner liegen, die UI verhindert das. Die einzige Ausnahme
+  vom Grundsatz "ein Ordner, ein Album" ist der Einzel-Ordner (unten).
 - **Angehakte Ordner:** Innerhalb eines Album-Ordners hakt der Nutzer an, welche
   Ordner hochgeladen werden: der Album-Ordner selbst und/oder beliebige
   Unterordner. Hochgeladen werden nur die Dateien *direkt* in angehakten Ordnern,
@@ -74,6 +74,21 @@ eigene, spätere Entscheidung des Nutzers auf Flickr, unabhängig von diesem Too
   Unterordner sind nicht automatisch angehakt.
 - Mehrere Album-Ordner dürfen bewusst auf dasselbe Album zeigen (z. B. dieselbe
   Reise auf zwei Platten).
+- **Einzel-Ordner** (gewünscht am 2026-11-22): Ein Ordner, dessen Fotos zu
+  mehreren Alben gehören, z. B. ein Kamera-Export einer Reise, deren Handyfotos
+  schon in den Alben "Porto", "Lissabon" und "Algarve" liegen. Der Nutzer
+  schaltet ihn statt "Als Album festlegen" auf "Fotos einzeln auf Alben
+  verteilen" (`folders.per_file`). Er ist damit angehakt, seine Unterordner
+  nicht. Im Fenster "Fotos zuordnen" stehen seine Dateien nach Aufnahmetag
+  gruppiert, mit Uhrzeit, Name und kleinem Vorschaubild. Man markiert einzelne
+  Fotos oder ganze Tage und ordnet sie einem vorhandenen oder neuen Album zu
+  oder nimmt die Zuordnung wieder weg (`file_albums`). **Nicht zugeordnete
+  Dateien werden nicht hochgeladen.** Ein Foto, das schon hochgeladen ist,
+  behält sein Album. Einzel-Ordner und Album-Ordner überschneiden sich nie (die
+  DB erzwingt das per Trigger). Ampel, Abgleich mit alten Fotos, Videos,
+  Probelauf und Duplikatschutz gelten unverändert, nur das Album kommt pro
+  Datei statt pro Ordner. Vorschaubilder entstehen beim Ansehen im Speicher
+  (Pillow, 160 px), nie im Foto-Ordner.
 - **Erledigt-Markierung:** Die UI leitet den Status jedes Ordners aus der DB ab
   und zeigt ihn im Baum an (vollständig / teilweise / Fehler). Es werden
   **keine Marker-Dateien** in die Foto-Ordner geschrieben (Prinzip 6). Solche
@@ -279,6 +294,7 @@ flickr-uploader/
 │               │   ├── download_view.js     # Alben herunterladen (Filter, Ziel)
 │               │   ├── decisions.js         # "Ist dasselbe Foto" / "Trotzdem hochladen"
 │               │   ├── videos.js            # Wahl pro Video: komprimieren, aufteilen, ganz
+│               │   ├── sorter_view.js       # Fenster "Fotos zuordnen" (Einzel-Ordner)
 │               │   ├── dryrun_view.js       # Fenster "Probelauf"
 │               │   ├── settings_view.js     # Reiter "Einstellungen"
 │               │   └── progress_view.js     # Upload-Karte: Plan, Fortschritt, Pause, Protokoll
@@ -538,6 +554,39 @@ CREATE TABLE video_parts (
     photo_hash  TEXT NOT NULL UNIQUE REFERENCES photos(hash),
     PRIMARY KEY (file_id, part)
 ) STRICT;
+```
+
+Migration v4 (2026-11-22, siehe "Einzel-Ordner"):
+
+```sql
+-- Einzel-Ordner: Ihre Dateien verteilt der Nutzer einzeln auf Alben, z. B. ein
+-- Export-Ordner mit mehreren Reisen. Nie über, unter oder gleich einem Album-Ordner.
+ALTER TABLE folders ADD COLUMN per_file INTEGER NOT NULL DEFAULT 0 CHECK (per_file IN (0, 1));
+
+-- Das Album jeder Datei eines Einzel-Ordners; keine Zeile = wird nicht hochgeladen.
+CREATE TABLE file_albums (
+    file_id   INTEGER NOT NULL PRIMARY KEY REFERENCES files(id),
+    album_id  INTEGER NOT NULL REFERENCES albums(id)
+) STRICT;
+CREATE INDEX idx_file_albums_album ON file_albums(album_id);
+
+CREATE TRIGGER folders_per_file_apart
+BEFORE UPDATE OF per_file, album_id ON folders
+WHEN NEW.per_file = 1 OR NEW.album_id IS NOT NULL
+BEGIN
+    SELECT RAISE(ABORT, 'per-file folder and album folder overlap')
+    WHERE (NEW.per_file = 1 AND NEW.album_id IS NOT NULL)
+       OR EXISTS (
+        SELECT 1 FROM folders f
+        WHERE f.root_id = NEW.root_id
+          AND f.id != NEW.id
+          AND ((NEW.per_file = 1 AND f.album_id IS NOT NULL)
+               OR (NEW.album_id IS NOT NULL AND f.per_file = 1))
+          AND (f.rel_path = '' OR NEW.rel_path = ''
+               OR substr(NEW.rel_path, 1, length(f.rel_path) + 1) = f.rel_path || '/'
+               OR substr(f.rel_path, 1, length(NEW.rel_path) + 1) = NEW.rel_path || '/')
+    );
+END;
 ```
 
 ## Zustandsautomaten

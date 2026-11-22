@@ -10,8 +10,9 @@ import { renderTree } from "./views/folder_browser.js";
 import { renderDryRun } from "./views/dryrun_view.js";
 import { renderUpload } from "./views/progress_view.js";
 import { renderSettings } from "./views/settings_view.js";
+import { renderSorter } from "./views/sorter_view.js";
 import { renderSteps } from "./views/steps.js";
-import { el, formatTime, icon } from "./views/ui.js";
+import { count, el, formatTime, icon } from "./views/ui.js";
 
 const view = {
   tab: "tab-upload",
@@ -254,6 +255,20 @@ async function tick(folderId, included) {
 
 const actions = {
   select,
+  async setPerFile(folderId, on) {
+    if (!on) {
+      const sure = await showDialog(
+        "Nicht mehr einzeln verteilen?",
+        "Die Zuordnungen der Fotos dieses Ordners zu Alben werden vergessen. Was schon auf Flickr ist, bleibt dort in seinem Album.",
+        { okLabel: "Zuordnungen vergessen", cancel: true },
+      );
+      if (!sure) return;
+    }
+    if (await call("set_per_file", folderId, on)) {
+      await afterChange(on ? "Verteilt die Fotos jetzt einzeln. Ordne sie über „Fotos zuordnen …“ zu." : "Verteilt nicht mehr einzeln");
+    }
+  },
+  openSorter,
   async makeAlbum(folderId, title) {
     view.open.add(folderId);
     if (await call("make_album_folder", folderId, title)) await afterChange("Als Album festgelegt. Hake jetzt darin an, was hochgeladen wird.");
@@ -473,6 +488,117 @@ const settingsActions = {
     const result = await busy("Backup wird angelegt …", () => call("backup_now"));
     if (result) showToast("Backup angelegt und geprüft");
     await renderSettingsTab();
+  },
+};
+
+// --- Sorting the photos of a per-file folder ------------------------------------------
+
+// What is on screen in "Fotos zuordnen": the folder, the selection, the typed
+// album, and the previews already fetched. The files come from the database.
+let sorter = null;
+
+async function openSorter(folderId, folderName) {
+  sorter = { folderId, folderName, selected: new Set(), last: null, albumText: "", thumbs: new Map(), data: null };
+  if (await loadSorter()) $("sorter").hidden = false;
+}
+
+async function loadSorter() {
+  const [files, albums] = await Promise.all([call("folder_files", sorter.folderId), call("album_choices")]);
+  if (!files || !albums) return false;
+  sorter.data = { files: files.files, albums, folderName: sorter.folderName };
+  drawSorter();
+  return true;
+}
+
+function drawSorter() {
+  const list = $("sorter").querySelector(".sorter-days");
+  const scroll = list ? list.scrollTop : 0;
+  renderSorter($("sorter"), sorter.data, sorter, sorterActions);
+  $("sorter").querySelector(".sorter-days").scrollTop = scroll;
+}
+
+const sorterActions = {
+  toggle(fileId, range) {
+    const files = sorter.data.files.filter((file) => !file.done && !file.skipped).map((file) => file.id);
+    if (range && sorter.last !== null) {
+      const [from, to] = [files.indexOf(sorter.last), files.indexOf(fileId)].sort((a, b) => a - b);
+      const on = !sorter.selected.has(fileId);
+      for (const id of files.slice(from, to + 1)) on ? sorter.selected.add(id) : sorter.selected.delete(id);
+    } else if (sorter.selected.has(fileId)) sorter.selected.delete(fileId);
+    else sorter.selected.add(fileId);
+    sorter.last = fileId;
+    drawSorter();
+  },
+  selectMany(fileIds, on) {
+    for (const id of fileIds) on ? sorter.selected.add(id) : sorter.selected.delete(id);
+    drawSorter();
+  },
+  clearSelection() {
+    sorter.selected.clear();
+    drawSorter();
+  },
+  async assign(title) {
+    const name = title.trim();
+    if (!name) {
+      showDialog("Hinweis", "Bitte ein Album wählen oder den Namen eines neuen Albums eintippen.");
+      return;
+    }
+    const ids = [...sorter.selected];
+    const existing = sorter.data.albums.find((album) => album.title === name);
+    let result;
+    if (existing) result = await call("assign_files", ids, existing.id);
+    else {
+      const sure = await showDialog("Neues Album?", `Es gibt noch kein Album „${name}“. Es wird mit dem ersten Upload auf Flickr angelegt.`, {
+        okLabel: "Neues Album",
+        cancel: true,
+      });
+      if (!sure) return;
+      result = await call("assign_files_to_new_album", ids, name);
+    }
+    if (!result) return;
+    showToast(`${count(result.changed, "Foto", "Fotos")} → ${name}${result.kept ? ` (${result.kept} schon auf Flickr, bleiben in ihrem Album)` : ""}`);
+    sorter.selected.clear();
+    await loadSorter();
+  },
+  async unassign() {
+    const result = await call("assign_files", [...sorter.selected], null);
+    if (!result) return;
+    showToast(`${count(result.changed, "Foto", "Fotos")} ohne Album: werden nicht hochgeladen`);
+    sorter.selected.clear();
+    await loadSorter();
+  },
+  async close() {
+    $("sorter").hidden = true;
+    sorter = null;
+    await afterChange();
+  },
+  thumbnailFor(fileId) {
+    return sorter.thumbs.get(fileId) || null;
+  },
+  // Previews are fetched when a tile scrolls into view, a few at a time.
+  observeThumbnails(container) {
+    if (sorter.observer) sorter.observer.disconnect();
+    sorter.observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const holder = entry.target;
+          const id = Number(holder.dataset.file);
+          sorter.observer.unobserve(holder);
+          if (sorter.thumbs.has(id)) continue;
+          sorter.thumbs.set(id, null);
+          window.pywebview.api.thumbnail(id).then((answer) => {
+            if (!sorter || !answer || !answer.url) return;
+            sorter.thumbs.set(id, answer.url);
+            holder.replaceChildren(el("img", { src: answer.url, alt: "" }));
+          });
+        }
+      },
+      { root: container.querySelector(".sorter-days"), rootMargin: "300px" },
+    );
+    for (const holder of container.querySelectorAll(".sorter-thumb[data-file]")) {
+      if (!holder.querySelector("img")) sorter.observer.observe(holder);
+    }
   },
 };
 

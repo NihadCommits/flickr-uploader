@@ -14,6 +14,9 @@ den PC herunterlädt.
   Titel ist der Ordnername und lässt sich ändern), und hakst an, was hinein
   soll, z. B. `Jpegs`, aber nicht `RAWs`. Vorhandene Flickr-Alben werden
   erkannt.
+- **Ein Ordner, mehrere Alben.** Ein Ordner wie der Kamera-Export einer ganzen
+  Reise verteilt seine Fotos auf mehrere vorhandene oder neue Alben: nach
+  Aufnahmetag gruppiert, mit Vorschaubildern, einzeln oder tageweise.
 - **Keine Duplikate.** Jeder Upload trägt einen Tag mit einem Prüfwert des
   Dateiinhalts. Angehakte Ordner werden vorher mit den Fotos abgeglichen, die
   schon auf Flickr liegen; mögliche Treffer warten auf deine Entscheidung.
@@ -67,7 +70,8 @@ Datei. (Im Terminal geht das genauso:
 **Hochladen**
 
 1. *Ordner öffnen …*: den Ordner mit deinen Fotos wählen.
-2. Im Baum einen Ordner anklicken und *Als Album festlegen* wählen.
+2. Im Baum einen Ordner anklicken und *Als Album festlegen* wählen, oder
+   *Fotos einzeln auf Alben verteilen* und dann *Fotos zuordnen …*.
 3. Die Unterordner anhaken, die hochgeladen werden sollen. Eine Ampel zeigt,
    ob das Album schon auf Flickr ist (grün), neu angelegt wird (blau) oder
    deine Entscheidung braucht (gelb, z. B. bei einem sehr ähnlichen Titel).

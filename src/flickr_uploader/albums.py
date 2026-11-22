@@ -15,6 +15,10 @@ whitespace collapsed, case ignored):
           is uploaded into the album
 - blue:   no match, or the user confirmed a new album; created on upload
 
+A per-file folder ("Einzel-Ordner") is the one exception to "one folder,
+one album": the user gives each of its files an album of its own
+(file_albums); files without one are not uploaded.
+
 Creating an album is serialized by one lock, and the intent (state
 'creating' plus the cover photo) is committed first. If Flickr gives no
 answer, the album stays 'creating' until a sync finds it by title and cover,
@@ -203,9 +207,121 @@ def confirm_new_album(conn: sqlite3.Connection, album_id: int) -> None:
 
 def set_included(conn: sqlite3.Connection, folder_id: int, included: bool) -> None:
     """Tick or untick a folder for upload. Ticking only works inside an album folder."""
-    if included and album_folder(conn, folder_id) is None:
+    if included and album_folder(conn, folder_id) is None and not is_per_file(conn, folder_id):
         raise NotInAlbumFolderError(f"folder {folder_id} is not inside an album folder")
     conn.execute("UPDATE folders SET included = ? WHERE id = ?", (int(included), folder_id))
+
+
+# --- Per-file folders ---------------------------------------------------------------
+
+
+def is_per_file(conn: sqlite3.Connection, folder_id: int) -> bool:
+    row = conn.execute("SELECT per_file FROM folders WHERE id = ?", (folder_id,)).fetchone()
+    if row is None:
+        raise db.RecordNotFoundError(f"folder {folder_id} does not exist")
+    return bool(row["per_file"])
+
+
+def set_per_file(conn: sqlite3.Connection, folder_id: int, on: bool) -> None:
+    """Make a folder a per-file folder (ticked, files given to albums one by one), or not.
+
+    Raises sqlite3.IntegrityError if it is, or lies in or around, an album
+    folder. Switching off forgets the file assignments.
+    """
+    if not on:
+        with db.transaction(conn):
+            used = [
+                row[0]
+                for row in conn.execute(
+                    "SELECT DISTINCT a.album_id FROM file_albums a JOIN files f "
+                    "ON f.id = a.file_id WHERE f.folder_id = ?",
+                    (folder_id,),
+                )
+            ]
+            conn.execute(
+                "DELETE FROM file_albums WHERE file_id IN "
+                "(SELECT id FROM files WHERE folder_id = ?)",
+                (folder_id,),
+            )
+            conn.execute("UPDATE folders SET per_file = 0, included = 0 WHERE id = ?", (folder_id,))
+            for album_id in used:
+                _drop_if_unused(conn, album_id)
+        return
+    if album_folder(conn, folder_id) is not None:
+        raise sqlite3.IntegrityError("per-file folder and album folder overlap")
+    conn.execute("UPDATE folders SET per_file = 1, included = 1 WHERE id = ?", (folder_id,))
+
+
+def plan_album(conn: sqlite3.Connection, title: str) -> int:
+    """An album for files of per-file folders: an existing one with exactly this
+    title, or a newly planned one."""
+    title = _clean(title)
+    with db.transaction(conn):
+        same = conn.execute("SELECT id FROM albums WHERE title = ?", (title,)).fetchall()
+        if len(same) == 1:
+            return same[0]["id"]
+        return conn.execute(
+            "INSERT INTO albums (title, state, updated_at) VALUES (?, 'planned', ?)",
+            (title, db.utc_now()),
+        ).lastrowid
+
+
+def assign_files(conn: sqlite3.Connection, file_ids: list[int], album_id: int | None) -> int:
+    """Give files of per-file folders an album (None: not uploaded); returns how many.
+
+    A file that is on Flickr already keeps its album.
+    """
+    if album_id is not None and (
+        conn.execute("SELECT 1 FROM albums WHERE id = ?", (album_id,)).fetchone() is None
+    ):
+        raise db.RecordNotFoundError(f"album {album_id} does not exist")
+    changed = 0
+    before: set[int] = set()
+    with db.transaction(conn):
+        for file_id in file_ids:
+            row = conn.execute(
+                "SELECT d.per_file, p.state, a.album_id FROM files f "
+                "JOIN folders d ON d.id = f.folder_id LEFT JOIN photos p ON p.hash = f.hash "
+                "LEFT JOIN file_albums a ON a.file_id = f.id WHERE f.id = ?",
+                (file_id,),
+            ).fetchone()
+            if row is None or not row["per_file"]:
+                raise AlbumError(f"file {file_id} is not in a per-file folder")
+            if row["state"] == "verified" and row["album_id"] is not None:
+                continue  # on Flickr in its album already: stays there
+            if row["album_id"] is not None:
+                before.add(row["album_id"])
+            if album_id is None:
+                conn.execute("DELETE FROM file_albums WHERE file_id = ?", (file_id,))
+            else:
+                conn.execute(
+                    "INSERT INTO file_albums (file_id, album_id) VALUES (?, ?) "
+                    "ON CONFLICT (file_id) DO UPDATE SET album_id = excluded.album_id",
+                    (file_id, album_id),
+                )
+            changed += 1
+        for old in before - {album_id}:
+            _drop_if_unused(conn, old)
+    return changed
+
+
+def album_of_file(conn: sqlite3.Connection, file_id: int, folder_id: int) -> int | None:
+    """The album a file goes into: its own (per-file folder) or its album folder's."""
+    if is_per_file(conn, folder_id):
+        row = conn.execute(
+            "SELECT album_id FROM file_albums WHERE file_id = ?", (file_id,)
+        ).fetchone()
+        return row["album_id"] if row else None
+    folder = album_folder(conn, folder_id)
+    return folder["album_id"] if folder else None
+
+
+def _in_use(conn: sqlite3.Connection, album_id: int) -> bool:
+    return (
+        conn.execute("SELECT 1 FROM folders WHERE album_id = ?", (album_id,)).fetchone() is not None
+        or conn.execute("SELECT 1 FROM file_albums WHERE album_id = ?", (album_id,)).fetchone()
+        is not None
+    )
 
 
 def _link(conn: sqlite3.Connection, folder_id: int, album_id: int) -> None:
@@ -220,8 +336,7 @@ def _link(conn: sqlite3.Connection, folder_id: int, album_id: int) -> None:
 def _drop_if_unused(conn: sqlite3.Connection, album_id: int) -> None:
     """Forget a planned album that no folder points to any more."""
     state = conn.execute("SELECT state FROM albums WHERE id = ?", (album_id,)).fetchone()[0]
-    in_use = conn.execute("SELECT 1 FROM folders WHERE album_id = ?", (album_id,)).fetchone()
-    if state == "planned" and in_use is None:
+    if state == "planned" and not _in_use(conn, album_id):
         conn.execute("DELETE FROM album_photos WHERE album_id = ?", (album_id,))
         conn.execute("DELETE FROM albums WHERE id = ?", (album_id,))
 
@@ -484,7 +599,7 @@ def _reconcile_creating(conn: sqlite3.Connection, remote: list[Album]) -> int:
 
 def _forget_deleted(conn: sqlite3.Connection, album_id: int) -> None:
     title = conn.execute("SELECT title FROM albums WHERE id = ?", (album_id,)).fetchone()[0]
-    if conn.execute("SELECT 1 FROM folders WHERE album_id = ?", (album_id,)).fetchone() is None:
+    if not _in_use(conn, album_id):
         # Nobody plans with it: just drop it from the mirror.
         conn.execute("DELETE FROM album_photos WHERE album_id = ?", (album_id,))
         conn.execute("DELETE FROM albums WHERE id = ?", (album_id,))
@@ -526,6 +641,9 @@ def _merge_green(conn: sqlite3.Connection) -> int:
         with db.transaction(conn):
             conn.execute(
                 "UPDATE folders SET album_id = ? WHERE album_id = ?", (target, album["id"])
+            )
+            conn.execute(
+                "UPDATE file_albums SET album_id = ? WHERE album_id = ?", (target, album["id"])
             )
             conn.execute(
                 "INSERT OR IGNORE INTO album_photos (album_id, photo_hash, state, updated_at) "

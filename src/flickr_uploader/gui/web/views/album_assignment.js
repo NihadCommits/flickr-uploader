@@ -20,7 +20,13 @@ export function renderDetails(container, folder, folders, context, act) {
       el("h2", { class: "folder-title", text: folder.name }),
       el("p", { class: "path-line", text: folder.path || "Ausgangsordner" }),
     ),
-    folder.album ? albumSection(folder, context, act) : folder.in_album ? memberSection(folder, folders, act) : assignSection(folder, act),
+    folder.album
+      ? albumSection(folder, context, act)
+      : folder.in_album
+        ? memberSection(folder, folders, act)
+        : folder.per_file
+          ? perFileSection(folder, act)
+          : assignSection(folder, act),
     folder.in_album ? uploadSection(folder) : null,
     folder.included ? decisionsSection(folder, context.matches, act) : null,
     folder.included ? videosSection(context.videos, act) : null,
@@ -57,6 +63,28 @@ function assignSection(folder, act) {
     el("p", { class: "muted", text: "Soll dieser Ordner ein Album auf Flickr werden? Danach hakst du darin an, welche Ordner hochgeladen werden." }),
     el("label", { class: "field-label", text: "Albumtitel (vorgeschlagen: Ordnername)" }),
     el("div", { class: "field" }, input, el("button", { class: "btn btn-primary", text: "Als Album festlegen", onclick: () => act.makeAlbum(folder.id, input.value) })),
+    el("p", { class: "muted small", text: "Liegen hier Fotos mehrerer Alben, z. B. ein Kamera-Export einer ganzen Reise? Dann verteile sie einzeln:" }),
+    el("button", { class: "btn", text: "Fotos einzeln auf Alben verteilen", onclick: () => act.setPerFile(folder.id, true) }),
+  );
+}
+
+function perFileSection(folder, act) {
+  const info = folder.per_file;
+  const open = info.files - info.assigned;
+  return el(
+    "div",
+    { class: "section" },
+    el("p", { class: "section-title", text: "Fotos einzeln verteilt" }),
+    el("p", { class: "muted", text: `${count(info.files, "Datei", "Dateien")} · ${info.assigned} zugeordnet (${count(info.albums, "Album", "Alben")}) · ${open} ohne Album` }),
+    open
+      ? el("div", { class: "note warn" }, icon("info"), el("span", { text: "Fotos ohne Album werden nicht hochgeladen." }))
+      : null,
+    el(
+      "div",
+      { class: "actions" },
+      el("button", { class: "btn btn-primary", text: "Fotos zuordnen …", onclick: () => act.openSorter(folder.id, folder.name) }),
+      el("button", { class: "btn btn-ghost", text: "Nicht mehr einzeln verteilen", onclick: () => act.setPerFile(folder.id, false) }),
+    ),
   );
 }
 

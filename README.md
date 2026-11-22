@@ -13,6 +13,10 @@ to your PC.
 - **Folders become albums.** You choose which folders are albums (the title
   defaults to the folder name and can be changed) and tick what goes in,
   e.g. `Jpegs` but not `RAWs`. Existing Flickr albums are recognized.
+- **One folder, several albums.** A folder like a camera export of a whole
+  trip can spread its photos over several albums, existing or new: photos
+  grouped by the day they were taken, with previews, picked one by one or a
+  whole day at a time.
 - **No duplicates.** Every upload carries a content-hash tag. Ticked folders
   are compared with the photos already on Flickr first; possible matches wait
   for your decision.
@@ -64,7 +68,8 @@ The interface is in German.
 **Hochladen**
 
 1. *Ordner öffnen …*: pick the folder with your photos.
-2. Click a folder in the tree and choose *Als Album festlegen*.
+2. Click a folder in the tree and choose *Als Album festlegen*, or *Fotos
+   einzeln auf Alben verteilen* and then *Fotos zuordnen …*.
 3. Tick the subfolders to upload. A traffic light shows whether the album
    already exists on Flickr (green), will be created (blue) or needs your
    decision (yellow, e.g. a very similar title).

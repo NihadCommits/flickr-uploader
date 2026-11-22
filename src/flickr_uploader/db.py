@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 MIN_SQLITE_VERSION = (3, 37, 0)  # first version with STRICT tables
 BUSY_TIMEOUT_SECONDS = 5.0
 DEFAULT_KEEP_BACKUPS = 10
@@ -228,8 +228,39 @@ CREATE TABLE video_parts (
 ) STRICT;
 """
 
+_SCHEMA_V4 = """
+-- Folders whose files the user hands to albums one by one, e.g. an export
+-- folder holding several trips. Never above, below or equal to an album folder.
+ALTER TABLE folders ADD COLUMN per_file INTEGER NOT NULL DEFAULT 0 CHECK (per_file IN (0, 1));
+
+-- The album each file of such a folder goes into; no row = not uploaded.
+CREATE TABLE file_albums (
+    file_id   INTEGER NOT NULL PRIMARY KEY REFERENCES files(id),
+    album_id  INTEGER NOT NULL REFERENCES albums(id)
+) STRICT;
+CREATE INDEX idx_file_albums_album ON file_albums(album_id);
+
+CREATE TRIGGER folders_per_file_apart
+BEFORE UPDATE OF per_file, album_id ON folders
+WHEN NEW.per_file = 1 OR NEW.album_id IS NOT NULL
+BEGIN
+    SELECT RAISE(ABORT, 'per-file folder and album folder overlap')
+    WHERE (NEW.per_file = 1 AND NEW.album_id IS NOT NULL)
+       OR EXISTS (
+        SELECT 1 FROM folders f
+        WHERE f.root_id = NEW.root_id
+          AND f.id != NEW.id
+          AND ((NEW.per_file = 1 AND f.album_id IS NOT NULL)
+               OR (NEW.album_id IS NOT NULL AND f.per_file = 1))
+          AND (f.rel_path = '' OR NEW.rel_path = ''
+               OR substr(NEW.rel_path, 1, length(f.rel_path) + 1) = f.rel_path || '/'
+               OR substr(f.rel_path, 1, length(NEW.rel_path) + 1) = NEW.rel_path || '/')
+    );
+END;
+"""
+
 # Schema version -> SQL that upgrades from the previous version.
-_MIGRATIONS: dict[int, str] = {1: _SCHEMA_V1, 2: _SCHEMA_V2, 3: _SCHEMA_V3}
+_MIGRATIONS: dict[int, str] = {1: _SCHEMA_V1, 2: _SCHEMA_V2, 3: _SCHEMA_V3, 4: _SCHEMA_V4}
 
 
 class DatabaseError(Exception):

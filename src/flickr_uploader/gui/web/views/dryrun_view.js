@@ -15,6 +15,7 @@ const ACTIONS = {
   wait_album: ["wartet: das Album braucht eine Entscheidung", "wait"],
   wait_video: ["wartet: Komprimieren oder Aufteilen wählen", "wait"],
   no_album: ["liegt in keinem Album-Ordner", "wait"],
+  unassigned: ["keinem Album zugeordnet, wird nicht hochgeladen", "skip"],
   skipped: ["übersprungen", "skip"],
   failed: ["wird nicht erneut versucht", "skip"],
 };
@@ -37,7 +38,7 @@ export function renderDryRun(container, result, close) {
     totals.skipped ? `${totals.skipped} übersprungen` : null,
   ].filter(Boolean);
   const groups = result.albums.map((album) => group(album.title, ALBUM_STATES[album.state], album.files));
-  if (result.outside.length) groups.push(group("Ohne Album-Ordner", "wird nicht hochgeladen", result.outside));
+  if (result.outside.length) groups.push(group("Ohne Album", "wird nicht hochgeladen", result.outside));
   container.replaceChildren(
     el(
       "div",

@@ -11,13 +11,16 @@ an exception, so the frontend can show them as they are. Attributes and
 helpers start with "_": pywebview would otherwise expose them to the page.
 """
 
+import base64
 import dataclasses
 import importlib.metadata
+import io
 import os
 import sqlite3
 import threading
 import time
 import webbrowser
+from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
@@ -40,6 +43,8 @@ from flickr_uploader.flickr_client import FlickrClient, FlickrClientError, RateL
 
 _ELIGIBLE = ("new", "hashed", "unreadable")
 LOG_LINES = 150  # events shown in the log of a run
+THUMBNAIL_PIXELS = 160
+THUMBNAILS_KEPT = 3000  # previews kept in memory (about 5 KB each)
 TARGET_IN_ARCHIVE = (
     "Dieser Ordner liegt in oder über einem Ordner, aus dem du hochlädst (deinem "
     "Foto-Archiv). Downloads kommen nie dorthin. Bitte einen Ordner außerhalb wählen, "
@@ -115,6 +120,9 @@ class Api:
         self._limiter = RateLimiter()
         self._prechecks: set[int] = set()
         self._prechecks_lock = threading.Lock()
+        # Previews of photos, made on demand; only in memory, never on disk.
+        self._thumbnails: OrderedDict[tuple[int, int], str | None] = OrderedDict()
+        self._thumbnails_lock = threading.Lock()
 
     def _attach(self, window) -> None:
         """Called by app.py once the window exists (for the folder dialog)."""
@@ -203,6 +211,11 @@ class Api:
             with self._database.connect() as conn:
                 return {"album_id": albums.assign_album(conn, folder_id, title or None)}
         except sqlite3.IntegrityError as error:
+            if "per-file folder" in str(error):
+                return {
+                    "error": "Hier liegt ein Ordner, der seine Fotos einzeln verteilt. Ein "
+                    "Album-Ordner darf nicht in, über oder unter so einem Ordner liegen."
+                }
             if "nested album folder" not in str(error):
                 raise
             return {
@@ -404,6 +417,143 @@ class Api:
         self._open_url(f"https://www.flickr.com/photos/{user}/{photo_id}")
         return {}
 
+    # --- Per-file folders (one export folder, several albums) --------------------------
+
+    def set_per_file(self, folder_id: int, on: bool) -> dict:
+        """Give this folder's photos albums one by one (on), or stop that (off)."""
+        try:
+            with self._database.connect() as conn:
+                albums.set_per_file(conn, folder_id, bool(on))
+        except sqlite3.IntegrityError:
+            return {
+                "error": "Das geht nicht in, über oder unter einem Album-Ordner. Ein Ordner ist "
+                "entweder ein Album oder verteilt seine Fotos einzeln."
+            }
+        except db.RecordNotFoundError:
+            return {"error": "Diesen Ordner gibt es nicht mehr. Bitte neu scannen."}
+        if on:
+            self._start_precheck(folder_id)
+        return {}
+
+    def folder_files(self, folder_id: int) -> dict:
+        """The files of a per-file folder with capture time and album, for "Fotos zuordnen"."""
+        with self._database.connect() as conn:
+            folder = conn.execute(
+                "SELECT d.rel_path, d.per_file, r.path FROM folders d "
+                "JOIN roots r ON r.id = d.root_id WHERE d.id = ?",
+                (folder_id,),
+            ).fetchone()
+            if folder is None or not folder["per_file"]:
+                return {"error": "Dieser Ordner verteilt seine Fotos nicht einzeln."}
+            directory = scanner.folder_path(folder["path"], folder["rel_path"])
+            self._read_capture_times(conn, folder_id, directory)
+            rows = conn.execute(
+                "SELECT f.id, f.name, f.status, f.taken_at, f.mtime_ns, a.album_id, "
+                "b.title AS album, p.state AS photo FROM files f "
+                "LEFT JOIN file_albums a ON a.file_id = f.id "
+                "LEFT JOIN albums b ON b.id = a.album_id "
+                "LEFT JOIN photos p ON p.hash = f.hash "
+                "WHERE f.folder_id = ? AND f.status != 'missing'",
+                (folder_id,),
+            ).fetchall()
+        files = []
+        for row in rows:
+            taken = row["taken_at"]
+            files.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    # Without a capture date (e.g. some videos): the file's date, marked as such.
+                    "taken": taken or _file_time(row["mtime_ns"]),
+                    "taken_known": taken is not None,
+                    "video": videoplans.is_video(row["name"]),
+                    "skipped": row["status"].startswith("skipped_")
+                    and not videoplans.too_large(row),
+                    "album_id": row["album_id"],
+                    "album": row["album"],
+                    "done": row["photo"] == "verified",
+                }
+            )
+        files.sort(key=lambda file: (file["taken"], file["name"]))
+        return {"files": files}
+
+    def album_choices(self) -> list[dict]:
+        """Every album a file can go into: on Flickr, or planned in this app."""
+        with self._database.connect() as conn:
+            rows = conn.execute(
+                "SELECT id, title, state FROM albums WHERE state != 'creating' "
+                "ORDER BY title COLLATE NOCASE"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def assign_files(self, file_ids: list[int], album_id: int | None) -> dict:
+        """Give files of per-file folders an album (None: they are not uploaded)."""
+        try:
+            with self._database.connect() as conn:
+                changed = albums.assign_files(
+                    conn, [int(i) for i in file_ids], int(album_id) if album_id else None
+                )
+        except albums.AlbumError:
+            return {"error": "Nur Fotos aus Ordnern, die einzeln verteilen, lassen sich zuordnen."}
+        except db.RecordNotFoundError:
+            return {"error": "Dieses Album gibt es nicht mehr. Bitte die Albenliste aktualisieren."}
+        return {"changed": changed, "kept": len(file_ids) - changed}
+
+    def assign_files_to_new_album(self, file_ids: list[int], title: str) -> dict:
+        """Plan a new album (or take the one with exactly this title) for these files."""
+        try:
+            with self._database.connect() as conn:
+                album_id = albums.plan_album(conn, title)
+        except ValueError:
+            return {"error": "Der Albumtitel darf nicht leer sein."}
+        return {"album_id": album_id, **self.assign_files(file_ids, album_id)}
+
+    def thumbnail(self, file_id: int) -> dict:
+        """A small preview of a photo as data URL (None for videos and unreadable files)."""
+        with self._database.connect() as conn:
+            row = conn.execute(
+                "SELECT f.name, f.mtime_ns, d.rel_path, r.path FROM files f "
+                "JOIN folders d ON d.id = f.folder_id JOIN roots r ON r.id = d.root_id "
+                "WHERE f.id = ?",
+                (file_id,),
+            ).fetchone()
+        if row is None:
+            return {"url": None}
+        key = (int(file_id), row["mtime_ns"])
+        with self._thumbnails_lock:
+            if key in self._thumbnails:
+                self._thumbnails.move_to_end(key)
+                return {"url": self._thumbnails[key]}
+        path = os.path.join(scanner.folder_path(row["path"], row["rel_path"]), row["name"])
+        url = None if videoplans.is_video(row["name"]) else _preview(path)
+        with self._thumbnails_lock:
+            self._thumbnails[key] = url
+            while len(self._thumbnails) > THUMBNAILS_KEPT:
+                self._thumbnails.popitem(last=False)
+        return {"url": url}
+
+    def _read_capture_times(self, conn: sqlite3.Connection, folder_id: int, directory: str):
+        """Capture time of files the pre-check has not read yet (same columns as it uses)."""
+        missing = conn.execute(
+            "SELECT id, name FROM files WHERE folder_id = ? AND taken_at IS NULL "
+            "AND width IS NULL AND status IN ('new', 'hashed')",
+            (folder_id,),
+        ).fetchall()
+        found = []
+        for row in missing:
+            try:
+                meta = precheck.read_metadata(os.path.join(directory, row["name"]))
+            except OSError:
+                continue
+            found.append((meta.taken, meta.width, meta.height, db.utc_now(), row["id"]))
+        if found:
+            with db.transaction(conn):
+                conn.executemany(
+                    "UPDATE files SET taken_at = ?, width = ?, height = ?, updated_at = ? "
+                    "WHERE id = ?",
+                    found,
+                )
+
     # --- Videos too large or too long for Flickr --------------------------------------
 
     def videos(self, folder_id: int) -> dict:
@@ -467,7 +617,8 @@ class Api:
             }
             rows = conn.execute(
                 "SELECT f.id, f.name, f.status, f.duration_seconds, p.state AS photo, d.root_id, "
-                "d.rel_path, d.prechecked_at IS NOT NULL AS checked, "
+                "d.rel_path, d.prechecked_at IS NOT NULL AS checked, d.per_file, "
+                "(SELECT a.album_id FROM file_albums a WHERE a.file_id = f.id) AS own_album, "
                 "EXISTS (SELECT 1 FROM precheck_matches m "
                 "WHERE m.file_id = f.id AND m.decision = 'open') AS open, "
                 "(SELECT count(*) FROM video_parts v WHERE v.file_id = f.id) AS parts, "
@@ -491,16 +642,22 @@ class Api:
                 "album",
                 "unchecked",
                 "video",
+                "unassigned",
             ),
             0,
         )
         for row in rows:
             plan["files"] += 1
-            album_id = _enclosing_album(
-                row["rel_path"],
-                {path: album for (root, path), album in album_of.items() if root == row["root_id"]},
-            )
-            if row["id"] in video_choice and video_choice[row["id"]] is None:
+            if row["per_file"]:
+                album_id = row["own_album"]
+            else:
+                album_id = _enclosing_album(
+                    row["rel_path"],
+                    {path: a for (root, path), a in album_of.items() if root == row["root_id"]},
+                )
+            if row["per_file"] and album_id is None and row["photo"] != "verified":
+                plan["unassigned"] += 1  # not given an album: not uploaded
+            elif row["id"] in video_choice and video_choice[row["id"]] is None:
                 plan["video"] += 1  # too large: waits for compress or split
             elif row["status"].startswith("skipped_") and row["id"] not in video_choice:
                 plan["skipped"] += 1
@@ -982,7 +1139,7 @@ class Api:
         rows = {
             row["id"]: row
             for row in conn.execute(
-                "SELECT id, rel_path, album_id, included, prechecked_at FROM folders "
+                "SELECT id, rel_path, album_id, included, prechecked_at, per_file FROM folders "
                 "WHERE root_id = ? AND missing = 0",
                 (root["id"],),
             )
@@ -1042,6 +1199,7 @@ class Api:
                     "album": _album(album_rows[album_id], lights) if album_id else None,
                     "in_album": _enclosing_album(rel_path, album_of_path),
                     "included": bool(row["included"]),
+                    "per_file": _per_file_summary(conn, row) if row["per_file"] else None,
                     "prechecked": row["prechecked_at"] is not None,
                     "precheck_running": row["id"] in running,
                     "open_matches": open_matches.get(row["id"], 0),
@@ -1081,6 +1239,38 @@ def _login_error(error: auth.AuthError) -> str:
     if isinstance(error, auth.NotConfiguredError):
         return "Nicht bei Flickr angemeldet. Einrichten im Reiter „Einstellungen“."
     return f"Nicht bei Flickr angemeldet ({error}). Bitte im Reiter „Einstellungen“ neu einrichten."
+
+
+def _per_file_summary(conn: sqlite3.Connection, folder: sqlite3.Row) -> dict:
+    """How far the files of a per-file folder are given albums."""
+    row = conn.execute(
+        "SELECT count(*) AS files, count(a.file_id) AS assigned, "
+        "count(DISTINCT a.album_id) AS albums FROM files f "
+        "LEFT JOIN file_albums a ON a.file_id = f.id "
+        "WHERE f.folder_id = ? AND f.status != 'missing'",
+        (folder["id"],),
+    ).fetchone()
+    return dict(row)
+
+
+def _preview(path: str) -> str | None:
+    from PIL import Image, ImageOps
+
+    try:
+        with Image.open(config.filesystem_path(path)) as image:
+            image.draft("RGB", (THUMBNAIL_PIXELS * 2, THUMBNAIL_PIXELS * 2))  # fast for JPEG
+            image = ImageOps.exif_transpose(image).convert("RGB")
+            image.thumbnail((THUMBNAIL_PIXELS, THUMBNAIL_PIXELS))
+            out = io.BytesIO()
+            image.save(out, "JPEG", quality=70)
+    except (OSError, ValueError, SyntaxError):
+        return None
+    return "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode("ascii")
+
+
+def _file_time(mtime_ns: int) -> str:
+    """A file's modified time in the form of a capture time (local time)."""
+    return datetime.fromtimestamp(mtime_ns / 1e9).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _has_flickr_data(conn: sqlite3.Connection) -> bool:

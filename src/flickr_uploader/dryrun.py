@@ -25,6 +25,7 @@ WAIT_MATCH = "wait_match"
 WAIT_ALBUM = "wait_album"
 WAIT_VIDEO = "wait_video"
 NO_ALBUM = "no_album"
+UNASSIGNED = "unassigned"  # in a per-file folder without an album: not uploaded
 SKIPPED = "skipped"
 FAILED = "failed"
 
@@ -62,7 +63,7 @@ def dry_run(conn: sqlite3.Connection) -> DryRun:
     lights = albums.lights(conn)
     rows = conn.execute(
         "SELECT f.id, f.name, f.size_bytes, f.status, f.duration_seconds, f.folder_id, "
-        "p.state AS photo, d.rel_path, r.path AS root_path "
+        "p.state AS photo, d.rel_path, d.per_file, r.path AS root_path "
         "FROM files f JOIN folders d ON d.id = f.folder_id JOIN roots r ON r.id = d.root_id "
         "LEFT JOIN photos p ON p.hash = f.hash "
         "WHERE d.included = 1 AND d.missing = 0 AND f.status != 'missing' "
@@ -72,13 +73,17 @@ def dry_run(conn: sqlite3.Connection) -> DryRun:
     outside: list[PlannedFile] = []
     album_of: dict[int, int | None] = {}
     for row in rows:
-        if row["folder_id"] not in album_of:
-            folder = albums.album_folder(conn, row["folder_id"])
-            album_of[row["folder_id"]] = folder["album_id"] if folder else None
-        album_id = album_of[row["folder_id"]]
         path = os.path.join(scanner.folder_path(row["root_path"], row["rel_path"]), row["name"])
+        if row["per_file"]:
+            album_id = albums.album_of_file(conn, row["id"], row["folder_id"])
+        else:
+            if row["folder_id"] not in album_of:
+                folder = albums.album_folder(conn, row["folder_id"])
+                album_of[row["folder_id"]] = folder["album_id"] if folder else None
+            album_id = album_of[row["folder_id"]]
         if album_id is None:
-            outside.append(PlannedFile(row["name"], path, NO_ALBUM))
+            action = UNASSIGNED if row["per_file"] else NO_ALBUM
+            outside.append(PlannedFile(row["name"], path, action))
             continue
         if album_id not in planned:
             album = conn.execute(

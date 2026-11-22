@@ -82,6 +82,7 @@ class RunReport:
     albums_created: int = 0
     skipped: int = 0  # RAW, too large, unsupported
     waiting: int = 0  # for a decision, a pre-check or a new scan
+    unassigned: int = 0  # in a per-file folder without an album: not uploaded
     failed: int = 0
     unclear: int = 0  # still unclear at the end; looked up again next run
 
@@ -159,6 +160,7 @@ class _Run:
         self.run_id: int | None = None
         self.lights: dict[int, str] = {}
         self.album_of_folder: dict[int, int | None] = {}
+        self.per_file_folders: dict[int, bool] = {}
         self.reported_albums: set[int] = set()
         self.pairs: set[tuple[int, str]] = set()  # (album, photo) of files done this run
         self.deferred: list[tuple[_File, str]] = []  # (file, digest) without answer
@@ -196,6 +198,10 @@ class _Run:
     def end(self, status: str) -> None:
         r = self.report
         r.status = status
+        if r.unassigned:
+            self.log(
+                "info", f"{r.unassigned} file(s) in per-file folders have no album: not uploaded"
+            )
         self.log(
             "info",
             f"Run {status}: {r.uploaded} uploaded, {r.adopted} taken over, {r.already_done} "
@@ -265,9 +271,12 @@ class _Run:
             self.log(level, f"Skipped ({reason}): {file.path}", file_id=file.id)
             self.report.skipped += 1
             return
-        album_id = self.album_of(file.folder_id)
+        album_id = self.album_of(file)
         if album_id is None:
-            self.wait(file, "not inside an album folder")
+            if self.per_file(file.folder_id):
+                self.report.unassigned += 1  # the user's choice; one line at the end
+            else:
+                self.wait(file, "not inside an album folder")
             return
         if self.lights.get(album_id) == albums.YELLOW:
             if album_id not in self.reported_albums:
@@ -769,11 +778,18 @@ class _Run:
 
     # --- Helpers ----------------------------------------------------------------
 
-    def album_of(self, folder_id: int) -> int | None:
-        if folder_id not in self.album_of_folder:
-            row = albums.album_folder(self.conn, folder_id)
-            self.album_of_folder[folder_id] = row["album_id"] if row else None
-        return self.album_of_folder[folder_id]
+    def album_of(self, file: _File) -> int | None:
+        if self.per_file(file.folder_id):
+            return albums.album_of_file(self.conn, file.id, file.folder_id)
+        if file.folder_id not in self.album_of_folder:
+            row = albums.album_folder(self.conn, file.folder_id)
+            self.album_of_folder[file.folder_id] = row["album_id"] if row else None
+        return self.album_of_folder[file.folder_id]
+
+    def per_file(self, folder_id: int) -> bool:
+        if folder_id not in self.per_file_folders:
+            self.per_file_folders[folder_id] = albums.is_per_file(self.conn, folder_id)
+        return self.per_file_folders[folder_id]
 
     def album(self, album_id: int) -> sqlite3.Row:
         return self.conn.execute(

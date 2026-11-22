@@ -75,6 +75,7 @@ function idle(plan, run, job, act) {
       : "Noch keine Ordner angehakt";
   const details = [];
   if (plan.decide) details.push(`${plan.decide} warten auf deine Entscheidung`);
+  if (plan.unassigned) details.push(`${plan.unassigned} ohne Album (werden nicht hochgeladen)`);
   if (plan.video) details.push(`${plan.video} zu große Videos warten auf „Komprimieren“ oder „Aufteilen“`);
   if (plan.album) details.push(`${plan.album} in Alben, die eine Entscheidung brauchen`);
   if (plan.done) details.push(`${plan.done} schon auf Flickr`);
